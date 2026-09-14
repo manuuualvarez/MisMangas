@@ -1,0 +1,55 @@
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# --- Xcode ---
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+build/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+
+# --- Swift Package Manager ---
+.build/
+.swiftpm/
+Packages/
+Package.resolved.bak
+
+# --- Fastlane ---
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# --- Claude (cualquier nivel) ---
+.claude/
+**/.claude/
+CLAUDE.md
+CLAUDE.local.md
+
+# --- Codex y configuración de agentes (cualquier nivel) ---
+.codex/
+.agents/
+AGENTS.md
+AGENTS.override.md
+
+# --- Documentación de trabajo con AI / plan de desarrollo ---
+/docs/
+/Docs/
+
+# --- Colecciones, ambientes, snapshots y runs generados de Postman ---
+/postman/
+
+# --- Mis Mangas · plan v2 (D9): tooling de agente y secretos fuera de git (Docs/ ya está arriba) ---
+/.specify/
+/Mis Mangas/Config/Secrets.xcconfig

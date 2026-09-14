@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "FC773889-AB59-4E5B-BD24-3F7100F02179",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:Mis Mangas.xcodeproj",
+        "identifier" : "FEEBF55030582F1200E59EAF",
+        "name" : "Mis MangasTests"
+      }
+    }
+  ],
+  "version" : 1
+}
