@@ -24,3 +24,7 @@ struct MainTabView: View {
 #Preview("Tabs", traits: .sampleData) {
     MainTabView()
 }
+
+#Preview("iPad", traits: .sampleData, .landscapeLeft) {
+    MainTabView()
+}

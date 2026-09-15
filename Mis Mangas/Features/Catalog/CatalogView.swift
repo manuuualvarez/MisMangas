@@ -9,10 +9,13 @@ import SwiftUI
 
 /// The catalog screen: title with the server total, All / Best picker, and the mangas of the
 /// selected mode as a grid (default) or a list, chosen from the toolbar menu and remembered.
+/// A two-column split view: the catalog leads and the selected manga fills the detail column
+/// on iPad; on iPhone the columns collapse into one stack and the detail is pushed.
 /// Each mode change rebuilds the content so its query follows the mode.
 struct CatalogView: View {
     @State private var viewModel: CatalogViewModel
     @State private var selectedMode: CatalogMode = .all
+    @State private var selectedManga: Manga?
     @AppStorage("catalog.displayMode") private var displayMode: DisplayMode = .grid
     @Namespace private var heroNamespace
 
@@ -21,13 +24,23 @@ struct CatalogView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationSplitView {
             Group {
                 switch displayMode {
                 case .grid:
-                    CatalogGridView(modeKey: selectedMode.modeKey, viewModel: viewModel, namespace: heroNamespace)
+                    CatalogGridView(
+                        modeKey: selectedMode.modeKey,
+                        selection: $selectedManga,
+                        viewModel: viewModel,
+                        namespace: heroNamespace
+                    )
                 case .list:
-                    CatalogListView(modeKey: selectedMode.modeKey, viewModel: viewModel, namespace: heroNamespace)
+                    CatalogListView(
+                        modeKey: selectedMode.modeKey,
+                        selection: $selectedManga,
+                        viewModel: viewModel,
+                        namespace: heroNamespace
+                    )
                 }
             }
             .id(selectedMode)
@@ -36,6 +49,7 @@ struct CatalogView: View {
             }
             .navigationTitle("Catalog")
             .navigationSubtitle(subtitle)
+            .toolbar(removing: .sidebarToggle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -48,17 +62,21 @@ struct CatalogView: View {
                     }
                 }
             }
-            .navigationDestination(for: Manga.self) { manga in
+            .navigationDestination(item: $selectedManga) { manga in
                 MangaDetailView(manga: manga)
                     .navigationTransition(.zoom(sourceID: manga.id, in: heroNamespace))
             }
+            .navigationSplitViewColumnWidth(min: 380, ideal: 520, max: 720)
             .task(id: selectedMode) {
                 await viewModel.loadInitial(mode: selectedMode)
             }
             .refreshable {
                 await viewModel.refresh()
             }
+        } detail: {
+            ContentUnavailableView("Select a manga", systemImage: "book.closed")
         }
+        .navigationSplitViewStyle(.balanced)
     }
 
     private var subtitle: Text {

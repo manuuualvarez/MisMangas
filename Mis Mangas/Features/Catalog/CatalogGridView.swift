@@ -9,16 +9,19 @@ import SwiftData
 import SwiftUI
 
 /// The covers of one catalog mode in an adaptive grid (three columns on iPhone), read from the
-/// store in server order. Same states and paging as the list.
+/// store in server order. Tapping a cell selects its manga; the owner presents the selection.
+/// Same states and paging as the list.
 struct CatalogGridView: View {
     @Query private var entries: [CatalogEntry]
+    @Binding var selection: Manga?
     @Bindable var viewModel: CatalogViewModel
     let namespace: Namespace.ID
 
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
-    init(modeKey: String, viewModel: CatalogViewModel, namespace: Namespace.ID) {
+    init(modeKey: String, selection: Binding<Manga?>, viewModel: CatalogViewModel, namespace: Namespace.ID) {
         _entries = Query(filter: #Predicate<CatalogEntry> { $0.modeKey == modeKey }, sort: \.ordinal)
+        _selection = selection
         self.viewModel = viewModel
         self.namespace = namespace
     }
@@ -32,7 +35,9 @@ struct CatalogGridView: View {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                     ForEach(entries) { entry in
                         if let manga = entry.manga {
-                            NavigationLink(value: manga) {
+                            Button {
+                                selection = manga
+                            } label: {
                                 CatalogGridCellView(manga: manga, namespace: namespace)
                             }
                             .buttonStyle(.plain)
@@ -79,7 +84,13 @@ struct CatalogGridView: View {
 #Preview("Grid", traits: .sampleData) {
     @Previewable @Environment(AppDependencies.self) var dependencies
     @Previewable @Namespace var namespace
+    @Previewable @State var selection: Manga?
     NavigationStack {
-        CatalogGridView(modeKey: "all", viewModel: CatalogViewModel(syncService: dependencies.syncService), namespace: namespace)
+        CatalogGridView(
+            modeKey: "all",
+            selection: $selection,
+            viewModel: CatalogViewModel(syncService: dependencies.syncService),
+            namespace: namespace
+        )
     }
 }
