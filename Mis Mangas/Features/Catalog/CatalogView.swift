@@ -49,9 +49,8 @@ struct CatalogView: View {
                 }
             }
             .navigationDestination(for: Manga.self) { manga in
-                // Placeholder until the detail screen exists.
-                Text(manga.title)
-                    .navigationTitle(manga.title)
+                MangaDetailView(manga: manga)
+                    .navigationTransition(.zoom(sourceID: manga.id, in: heroNamespace))
             }
             .task(id: selectedMode) {
                 await viewModel.loadInitial(mode: selectedMode)

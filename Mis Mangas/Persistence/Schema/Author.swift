@@ -25,3 +25,17 @@ final class Author {
         self.mangas = []
     }
 }
+
+/// Presentation helpers of the stored model. Views read these instead of parsing raw fields.
+extension Author {
+    /// "First Last", skipping empty name parts (studios often come with a single part).
+    var fullName: String {
+        [firstName, lastName]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    var roleValue: AuthorRole {
+        AuthorRole(rawValue: role) ?? .none
+    }
+}

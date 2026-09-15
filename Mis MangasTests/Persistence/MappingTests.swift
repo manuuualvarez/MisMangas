@@ -110,6 +110,23 @@ struct MappingTests {
         #expect(author.role == "Story")
     }
 
+    @Test func `fullName joins the name parts and skips the empty ones`() throws {
+        let dto = try #require(Self.monster().authors.first)
+        let studio = AuthorDTO(id: UUID(), firstName: "", lastName: "Studio Gaga", role: .art)
+
+        #expect(dto.makeAuthor().fullName == "Naoki Urasawa")
+        #expect(studio.makeAuthor().fullName == "Studio Gaga")
+    }
+
+    @Test func `roleValue resolves the stored role and falls back to none`() throws {
+        let author = try #require(Self.monster().authors.first).makeAuthor()
+        #expect(author.roleValue == .storyAndArt)
+
+        author.role = "Editor"
+
+        #expect(author.roleValue == AuthorRole.none)
+    }
+
     // MARK: - Unknown taxonomy values
 
     @Test func `An unknown status is stored as none and resolves to none`() throws {
@@ -168,6 +185,17 @@ struct MappingTests {
 
         #expect(manga.formattedScore == Self.monsterScoreText)
         #expect(manga.catalogAccessibilityLabel == "Monster, by Naoki Urasawa, score \(Self.monsterScoreText)")
+    }
+
+    @Test func `publicationAccessibilityLabel says the status and the years in words`() throws {
+        let finished = try Self.monster().makeManga()
+        #expect(finished.publicationAccessibilityLabel == "Finished, 1994 to 2001")
+
+        let ongoing = try JSONDecoder.app.decode(MangaDTO.self, from: Self.mangaJSON(status: "currently_publishing")).makeManga()
+        #expect(ongoing.publicationAccessibilityLabel == "Publishing, since 1984")
+
+        ongoing.startDate = nil
+        #expect(ongoing.publicationAccessibilityLabel == "Publishing")
     }
 
     @Test func `catalogAccessibilityLabel omits the author part when the manga has no authors`() throws {

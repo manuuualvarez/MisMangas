@@ -102,18 +102,27 @@ extension Manga {
         mainPictureURL.flatMap(URL.init(string:))
     }
 
-    /// "First Last" of the first author, skipping empty name parts; `nil` without authors.
+    /// Full name of the first author; `nil` without authors.
     var primaryAuthorName: String? {
-        authors.first.map { author in
-            [author.firstName, author.lastName]
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-        }
+        authors.first?.fullName
     }
 
     /// The score with two decimals in the user's locale.
     var formattedScore: String {
         score.formatted(.number.precision(.fractionLength(2)))
+    }
+
+    /// The publication line in words ("Finished, 1994 to 2001", "Publishing, since 1989", or the
+    /// status alone without dates), so VoiceOver does not depend on how it reads "·" and "–".
+    var publicationAccessibilityLabel: String {
+        let status = statusValue.displayName
+        guard let start = startDate?.formatted(.dateTime.year()) else {
+            return status
+        }
+        if let end = endDate?.formatted(.dateTime.year()) {
+            return String(localized: "\(status), \(start) to \(end)")
+        }
+        return String(localized: "\(status), since \(start)")
     }
 
     /// What VoiceOver reads for a catalog row or cell: title, first author (when there is one)
