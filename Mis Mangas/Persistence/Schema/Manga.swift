@@ -91,3 +91,38 @@ final class Manga {
         self.collectionEntry = nil
     }
 }
+
+/// Presentation helpers of the stored model. Views read these instead of parsing raw fields.
+extension Manga {
+    var statusValue: MangaStatus {
+        MangaStatus(rawValue: status) ?? .none
+    }
+
+    var coverURL: URL? {
+        mainPictureURL.flatMap(URL.init(string:))
+    }
+
+    /// "First Last" of the first author, skipping empty name parts; `nil` without authors.
+    var primaryAuthorName: String? {
+        authors.first.map { author in
+            [author.firstName, author.lastName]
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+    }
+
+    /// The score with two decimals in the user's locale.
+    var formattedScore: String {
+        score.formatted(.number.precision(.fractionLength(2)))
+    }
+
+    /// What VoiceOver reads for a catalog row or cell: title, first author (when there is one)
+    /// and score.
+    var catalogAccessibilityLabel: String {
+        if let author = primaryAuthorName {
+            String(localized: "\(title), by \(author), score \(formattedScore)")
+        } else {
+            String(localized: "\(title), score \(formattedScore)")
+        }
+    }
+}

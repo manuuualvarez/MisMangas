@@ -16,11 +16,11 @@ struct MangaSyncService {
     /// Retention of index rows and unreferenced detail records.
     static let retentionWindow: TimeInterval = 7 * 24 * 60 * 60
 
-    /// Fetches one page of `mode` and stores it under `mode.modeKey`. Returns the number of
-    /// items received, so the caller can tell whether a next page exists. Store failures
-    /// surface as `APIError.unknown`.
+    /// Fetches one page of `mode` and stores it under `mode.modeKey`. Returns how many items
+    /// arrived (so the caller can tell whether a next page exists) and the server total (for the
+    /// header and the page count). Store failures surface as `APIError.unknown`.
     @discardableResult
-    func loadCatalogPage(mode: CatalogMode, page: Int, per: Int) async throws(APIError) -> Int {
+    func loadCatalogPage(mode: CatalogMode, page: Int, per: Int) async throws(APIError) -> (received: Int, total: Int) {
         let pageDTO: MangaPageDTO
         switch mode {
         case .all:
@@ -28,12 +28,16 @@ struct MangaSyncService {
         case .best:
             pageDTO = try await mangaRepository.fetchBestMangas(page: page, per: per)
         }
+        // Cancelled while the page was in flight: the caller has moved on, keep the store as it was.
+        guard !Task.isCancelled else {
+            throw .cancelled
+        }
         do {
             try await syncActor.replaceCatalogPage(modeKey: mode.modeKey, page: page, per: per, dtos: pageDTO.items)
         } catch {
             throw .unknown
         }
-        return pageDTO.items.count
+        return (received: pageDTO.items.count, total: pageDTO.metadata.total)
     }
 
     /// Start-up maintenance: purges the index first, then the detail records nothing references

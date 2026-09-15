@@ -1,0 +1,85 @@
+//
+//  CatalogGridView.swift
+//  Mis Mangas
+//
+//  Created by Manuel Alvarez on 15/09/2026.
+//
+
+import SwiftData
+import SwiftUI
+
+/// The covers of one catalog mode in an adaptive grid (three columns on iPhone), read from the
+/// store in server order. Same states and paging as the list.
+struct CatalogGridView: View {
+    @Query private var entries: [CatalogEntry]
+    @Bindable var viewModel: CatalogViewModel
+    let namespace: Namespace.ID
+
+    private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
+
+    init(modeKey: String, viewModel: CatalogViewModel, namespace: Namespace.ID) {
+        _entries = Query(filter: #Predicate<CatalogEntry> { $0.modeKey == modeKey }, sort: \.ordinal)
+        self.viewModel = viewModel
+        self.namespace = namespace
+    }
+
+    var body: some View {
+        ScrollView {
+            if entries.isEmpty {
+                placeholder
+                    .frame(maxWidth: .infinity, minHeight: 360)
+            } else {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                    ForEach(entries) { entry in
+                        if let manga = entry.manga {
+                            NavigationLink(value: manga) {
+                                CatalogGridCellView(manga: manga, namespace: namespace)
+                            }
+                            .buttonStyle(.plain)
+                            .onAppear {
+                                if entry === entries.last {
+                                    Task { await viewModel.loadMore() }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                if let error = viewModel.loadError {
+                    InlineErrorView(error: error) {
+                        Task { await viewModel.retry() }
+                    }
+                    .padding(.horizontal)
+                }
+                PaginationFooterView(
+                    isLoading: viewModel.isLoading,
+                    hasNextPage: viewModel.hasNextPage,
+                    page: viewModel.currentPage + 1,
+                    totalPages: viewModel.totalPages
+                )
+            }
+        }
+    }
+
+    /// Same first-load, failure and empty states as the list, inside the scroll view.
+    @ViewBuilder
+    private var placeholder: some View {
+        if viewModel.isLoading {
+            ProgressView("Loading catalog…")
+        } else if let error = viewModel.loadError {
+            ErrorStateView(error: error) {
+                Task { await viewModel.refresh() }
+            }
+        } else {
+            EmptyStateView(title: "No mangas yet", systemImage: "books.vertical")
+        }
+    }
+}
+
+#Preview("Grid", traits: .sampleData) {
+    @Previewable @Environment(AppDependencies.self) var dependencies
+    @Previewable @Namespace var namespace
+    NavigationStack {
+        CatalogGridView(modeKey: "all", viewModel: CatalogViewModel(syncService: dependencies.syncService), namespace: namespace)
+    }
+}

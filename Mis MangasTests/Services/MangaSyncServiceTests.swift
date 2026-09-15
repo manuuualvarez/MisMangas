@@ -12,8 +12,9 @@ import Testing
 
 extension SharedMockSuites {
     /// The whole pipeline behind a catalog page: endpoint → mocked transport → decode →
-    /// `MangaSyncActor` → store. Oracles: the request `URLSession` handed to the mock, the ids
-    /// and order of the served fixture, and what a fresh `ModelContext` reads afterwards.
+    /// `MangaSyncActor` → store. Oracles: the request `URLSession` handed to the mock, the ids,
+    /// order and `metadata.total` of the served fixture, and what a fresh `ModelContext` reads
+    /// afterwards.
     @Suite("MangaSyncService")
     struct MangaSyncServiceTests {
         private static let sevenDays: TimeInterval = 7 * 86400
@@ -37,9 +38,10 @@ extension SharedMockSuites {
             CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
             let expectedIDs = try PersistenceTestSupport.pageItems("mangas_page.json").map(\.id)
 
-            let received = try await service.loadCatalogPage(mode: .all, page: 2, per: 20)
+            let result = try await service.loadCatalogPage(mode: .all, page: 2, per: 20)
 
-            #expect(received == 20)
+            #expect(result.received == 20)
+            #expect(result.total == 64833)
             let sent = try #require(CatalogMockScenario.lastRequest(.listMangas))
             #expect(sent.method == "GET")
             #expect(sent.path == "/list/mangas")
@@ -58,9 +60,10 @@ extension SharedMockSuites {
             CatalogMockScenario.set(.listBestMangas, .fixture("mangas_page_best.json"))
             let expectedIDs = try PersistenceTestSupport.pageItems("mangas_page_best.json").map(\.id)
 
-            let received = try await service.loadCatalogPage(mode: .best, page: 1, per: 20)
+            let result = try await service.loadCatalogPage(mode: .best, page: 1, per: 20)
 
-            #expect(received == 20)
+            #expect(result.received == 20)
+            #expect(result.total == 64833)
             let sent = try #require(CatalogMockScenario.lastRequest(.listBestMangas))
             #expect(sent.method == "GET")
             #expect(sent.path == "/list/bestMangas")
@@ -74,12 +77,13 @@ extension SharedMockSuites {
             #expect(try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).isEmpty)
         }
 
-        @Test func `loadCatalogPage reports fewer items on a short last page`() async throws {
+        @Test func `loadCatalogPage reports fewer items on a short last page and still the server total`() async throws {
             CatalogMockScenario.set(.listMangas, .fixture("mangas_page_empty.json"))
 
-            let received = try await service.loadCatalogPage(mode: .all, page: 5, per: 20)
+            let result = try await service.loadCatalogPage(mode: .all, page: 5, per: 20)
 
-            #expect(received == 0)
+            #expect(result.received == 0)
+            #expect(result.total == 64833)
             let context = PersistenceTestSupport.freshContext(container)
             #expect(try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).isEmpty)
         }

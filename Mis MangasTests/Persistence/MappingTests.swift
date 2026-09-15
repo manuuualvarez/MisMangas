@@ -155,6 +155,31 @@ struct MappingTests {
         #expect(dto.makeManga().coverURL == nil)
     }
 
+    /// The fixture score (9.15) rendered with two decimals in the test locale, computed here
+    /// rather than read back from the model.
+    private static var monsterScoreText: String {
+        9.15.formatted(.number.precision(.fractionLength(2)))
+    }
+
+    @Test func `catalogAccessibilityLabel names the title, the first author and the two-decimal score`() throws {
+        let dto = try Self.monster()
+        let manga = dto.makeManga()
+        manga.authors = dto.authors.map { $0.makeAuthor() }
+
+        #expect(manga.formattedScore == Self.monsterScoreText)
+        #expect(manga.catalogAccessibilityLabel == "Monster, by Naoki Urasawa, score \(Self.monsterScoreText)")
+    }
+
+    @Test func `catalogAccessibilityLabel omits the author part when the manga has no authors`() throws {
+        let manga = try Self.monster().makeManga()
+        #expect(manga.authors.isEmpty)
+
+        let label = manga.catalogAccessibilityLabel
+
+        #expect(!label.contains(", by "))
+        #expect(label == "Monster, score \(Self.monsterScoreText)")
+    }
+
     // MARK: - Inline fixture (shape from the backend OpenAPI)
 
     private static func mangaJSON(

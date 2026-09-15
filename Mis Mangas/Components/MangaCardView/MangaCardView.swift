@@ -9,12 +9,15 @@ import SwiftData
 import SwiftUI
 
 /// One catalog row: cover, title, first author and score, read as a single accessibility element.
+/// The cover is the source of the zoom transition into the detail.
 struct MangaCardView: View {
     let manga: Manga
+    let namespace: Namespace.ID
 
     var body: some View {
         HStack(spacing: 12) {
             MangaCoverView(manga: manga, size: .small)
+                .matchedTransitionSource(id: manga.id, in: namespace)
             VStack(alignment: .leading, spacing: 4) {
                 Text(manga.title)
                     .font(.headline)
@@ -24,30 +27,19 @@ struct MangaCardView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                Label(formattedScore, systemImage: "star.fill")
+                Label(manga.formattedScore, systemImage: "star.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var formattedScore: String {
-        manga.score.formatted(.number.precision(.fractionLength(2)))
-    }
-
-    private var accessibilityLabel: String {
-        if let author = manga.primaryAuthorName {
-            String(localized: "\(manga.title), by \(author), score \(formattedScore)")
-        } else {
-            String(localized: "\(manga.title), score \(formattedScore)")
-        }
+        .accessibilityLabel(manga.catalogAccessibilityLabel)
     }
 }
 
 #Preview("Card", traits: .sampleData) {
     @Previewable @Query var mangas: [Manga]
-    if let manga = mangas.first { MangaCardView(manga: manga).padding() }
+    @Previewable @Namespace var namespace
+    if let manga = mangas.first { MangaCardView(manga: manga, namespace: namespace).padding() }
 }
