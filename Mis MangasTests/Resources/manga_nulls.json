@@ -1,0 +1,46 @@
+{
+  "score": 8.71,
+  "startDate": "1989-09-27T00:00:00Z",
+  "titleJapanese": "はじめの一歩",
+  "chapters": null,
+  "sypnosis": "Makunouchi Ippo is a 16-year-old high school student who helps his mother run the family business. His hefty workload impedes on his social life, making him an easy target for bullies. One day, while being beaten up by a group of high school students, Ippo is saved by a boxer named Mamoru Takamura, and is brought to the Kamogawa Boxing Gym. \n\nThis afterschool bullying session turns his life around for the better as Ippo discovers his latent talent for boxing and decides to practice the sport professionally. However, Mamoru doubts Ippo's determination and assigns him a task deemed impossible to complete, but the resolute Ippo trains tirelessly to fulfill his mission. Along the way, he finds out what it means to attain true strength while making new friends and fighting formidable foes.\n\n[Written by MAL Rewrite]",
+  "title": "Hajime no Ippo",
+  "endDate": null,
+  "authors": [
+    {
+      "firstName": "George",
+      "lastName": "Morikawa",
+      "role": "Story & Art",
+      "id": "E6BFD854-D51D-46AB-8506-6AA58D719DFC"
+    }
+  ],
+  "mainPicture": "https://cdn.myanimelist.net/images/manga/2/250313l.jpg",
+  "id": 7,
+  "genres": [
+    {
+      "id": "4C13067F-96FF-4F14-A1C0-B33215F24E0B",
+      "genre": "Award Winning"
+    },
+    {
+      "id": "914A2BD5-5A1F-4D6F-9EA5-A839D5A8176B",
+      "genre": "Sports"
+    }
+  ],
+  "demographics": [
+    {
+      "id": "5E05BBF1-A72E-4231-9487-71CFE508F9F9",
+      "demographic": "Shounen"
+    }
+  ],
+  "url": "https://myanimelist.net/manga/7/Hajime_no_Ippo",
+  "status": "currently_publishing",
+  "titleEnglish": null,
+  "background": "Hajime no Ippo has sold over 94 million copies as of October 2013 and won the 15th Kodansha Manga Award for Best Shounen Manga in 1991.",
+  "themes": [
+    {
+      "theme": "Combat Sports",
+      "id": "C7019504-0497-4EAE-A9A7-F5ACF7C9B0EA"
+    }
+  ],
+  "volumes": null
+}
