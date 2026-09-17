@@ -79,11 +79,15 @@ struct CatalogView: View {
         .navigationSplitViewStyle(.balanced)
     }
 
+    /// Never empty: the large title bar sizes itself on the first layout and does not grow
+    /// when a subtitle appears later, so a placeholder reserves the line until the total arrives.
     private var subtitle: Text {
         if let total = viewModel.totalCount {
             Text("\(total, format: .number) mangas")
+        } else if viewModel.loadError != nil {
+            Text(verbatim: "—")
         } else {
-            Text(verbatim: "")
+            Text("Loading…")
         }
     }
 }

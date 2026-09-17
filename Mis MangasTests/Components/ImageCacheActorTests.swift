@@ -76,6 +76,33 @@ extension SharedMockSuites {
             #expect(CatalogMockScenario.hits(.image) == 1)
         }
 
+        @Test func `Cancelling the only waiter cancels the download and a later request downloads again`() async throws {
+            let png = try pngBytes()
+            // Long enough that an answer well before it can only mean the download was cancelled.
+            CatalogMockScenario.set(.image, .delayed(for: .seconds(2), then: .data(png, status: 200)))
+            let cache = makeCache()
+
+            let waiter = Task { await cache.image(for: Self.coverURL) }
+            // The one delay of the test: lets the request reach the transport before cancelling.
+            try await Task.sleep(for: .milliseconds(100))
+            try #require(CatalogMockScenario.hits(.image) == 1, "The download must be in flight before it is cancelled")
+
+            let clock = ContinuousClock()
+            let start = clock.now
+            waiter.cancel()
+            let image = await waiter.value
+            let elapsed = clock.now - start
+
+            #expect(image == nil)
+            #expect(elapsed < .seconds(1), "image(for:) kept waiting for the download after its only caller was cancelled")
+
+            CatalogMockScenario.set(.image, .data(png, status: 200))
+            let again = await cache.image(for: Self.coverURL)
+
+            #expect(again != nil)
+            #expect(CatalogMockScenario.hits(.image) == 2, "A cancelled download must not be cached; the next request downloads again")
+        }
+
         // MARK: - Helpers
 
         private func makeCache() -> ImageCacheActor {

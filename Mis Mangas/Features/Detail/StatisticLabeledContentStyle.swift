@@ -14,7 +14,7 @@ struct StatisticLabeledContentStyle: LabeledContentStyle {
             configuration.label
                 .font(.caption.weight(.semibold))
                 .textCase(.uppercase)
-                .foregroundStyle(Color.mmSecondaryLabel)
+                .foregroundStyle(.mmSecondaryLabel)
             configuration.content
                 .font(.title3.weight(.bold))
         }

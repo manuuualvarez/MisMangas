@@ -24,6 +24,7 @@ struct ErrorStateView: View {
                 retry()
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         }
     }
 }

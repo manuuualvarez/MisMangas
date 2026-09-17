@@ -30,9 +30,11 @@ struct PaginationFooterView: View {
             Spacer()
         }
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.mmSecondaryLabel)
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
+        // Between pages the footer is blank: keep assistive technologies from landing on it.
+        .accessibilityHidden(!isLoading && hasNextPage)
     }
 
     private var loadingText: Text {

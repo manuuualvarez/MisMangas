@@ -15,7 +15,7 @@ struct DetailSectionTitleView: View {
         Text(title)
             .font(.caption.weight(.semibold))
             .textCase(.uppercase)
-            .foregroundStyle(Color.mmSecondaryLabel)
+            .foregroundStyle(.mmSecondaryLabel)
             .accessibilityAddTraits(.isHeader)
     }
 }

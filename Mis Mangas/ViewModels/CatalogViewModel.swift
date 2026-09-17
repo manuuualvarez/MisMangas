@@ -42,7 +42,7 @@ final class CatalogViewModel {
     func loadInitial(mode: CatalogMode) async {
         currentTask?.cancel()
         currentMode = mode
-        await run(page: 1)
+        await run(mode: mode, page: 1)
     }
 
     /// Loads the page after `currentPage`. Does nothing while a load is in flight or when the
@@ -51,7 +51,7 @@ final class CatalogViewModel {
         guard !isLoading, hasNextPage else {
             return
         }
-        await run(page: currentPage + 1)
+        await run(mode: currentMode, page: currentPage + 1)
     }
 
     /// Pull-to-refresh: page 1 of the current mode again.
@@ -65,23 +65,24 @@ final class CatalogViewModel {
         guard !isLoading else {
             return
         }
-        await run(page: lastRequestedPage)
+        await run(mode: currentMode, page: lastRequestedPage)
     }
 
     /// Marks the load as in flight before any suspension, so a call queued behind this one sees
-    /// `isLoading` already set, then runs it in its own task and waits for it.
-    private func run(page: Int) async {
+    /// `isLoading` already set, then runs it in its own task and waits for it. The mode travels
+    /// with the page: the request is fixed here, not when the task gets to run.
+    private func run(mode: CatalogMode, page: Int) async {
         lastRequestedPage = page
         isLoading = true
         loadError = nil
-        let task = Task { await load(page: page) }
+        let task = Task { await load(mode: mode, page: page) }
         currentTask = task
         await task.value
     }
 
-    private func load(page: Int) async {
+    private func load(mode: CatalogMode, page: Int) async {
         do {
-            let result = try await syncService.loadCatalogPage(mode: currentMode, page: page, per: perPage)
+            let result = try await syncService.loadCatalogPage(mode: mode, page: page, per: perPage)
             // Cancelled after the download finished: a newer load owns the state now.
             guard !Task.isCancelled else {
                 return

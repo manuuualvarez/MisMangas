@@ -24,19 +24,19 @@ struct MangaHeaderView: View {
                 if let english = manga.titleEnglish, english != manga.title {
                     Text(english)
                         .font(.subheadline)
-                        .foregroundStyle(Color.mmSecondaryLabel)
+                        .foregroundStyle(.mmSecondaryLabel)
                 }
                 if let japanese = manga.titleJapanese {
                     Text(japanese)
                         .font(.subheadline)
-                        .foregroundStyle(Color.mmSecondaryLabel)
+                        .foregroundStyle(.mmSecondaryLabel)
                 }
                 Label(manga.formattedScore, systemImage: "star.fill")
                     .font(.headline)
                     .accessibilityLabel(String(localized: "Score \(manga.formattedScore)"))
                 publication
                     .font(.subheadline)
-                    .foregroundStyle(Color.mmSecondaryLabel)
+                    .foregroundStyle(.mmSecondaryLabel)
                     .accessibilityLabel(manga.publicationAccessibilityLabel)
             }
             .multilineTextAlignment(.center)

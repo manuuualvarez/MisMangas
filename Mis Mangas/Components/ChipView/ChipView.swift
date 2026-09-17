@@ -8,7 +8,8 @@
 import SwiftData
 import SwiftUI
 
-/// A read-only capsule for a genre, theme or demographic name.
+/// A read-only capsule for a genre, theme or demographic name. A system fill, not a blur
+/// material: Reduce Transparency does not change it and the text keeps its contrast.
 struct ChipView: View {
     let text: String
 
@@ -17,7 +18,7 @@ struct ChipView: View {
             .font(.caption)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(.thinMaterial, in: Capsule())
+            .background(.fill.tertiary, in: Capsule())
     }
 }
 

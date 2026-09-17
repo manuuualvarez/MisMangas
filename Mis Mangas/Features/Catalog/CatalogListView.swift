@@ -36,6 +36,8 @@ struct CatalogListView: View {
                     if let manga = entry.manga {
                         MangaCardView(manga: manga, namespace: namespace)
                             .tag(manga)
+                            // A selectable row reads as plain text to VoiceOver; say it acts.
+                            .accessibilityAddTraits(.isButton)
                             .listRowSeparator(entry === entries.first ? .hidden : .visible, edges: .top)
                             .onAppear {
                                 if entry === entries.last {
@@ -60,6 +62,14 @@ struct CatalogListView: View {
             }
         }
         .listStyle(.plain)
+        // With rows on screen the failure lands below the fold without taking focus: tell
+        // assistive technologies about it (with no rows the full-screen error state already does).
+        // The error carries an `any Error`, so the message is what gets observed.
+        .onChange(of: viewModel.loadError?.errorDescription) { _, description in
+            if let description, !entries.isEmpty {
+                AccessibilityNotification.Announcement(description).post()
+            }
+        }
     }
 
     /// What the screen shows while the mode has no rows: the first load, its failure, or an
@@ -73,7 +83,9 @@ struct CatalogListView: View {
                 Task { await viewModel.refresh() }
             }
         } else {
-            EmptyStateView(title: "No mangas yet", systemImage: "books.vertical")
+            EmptyStateView(title: "No mangas yet", systemImage: "books.vertical") {
+                Task { await viewModel.refresh() }
+            }
         }
     }
 }

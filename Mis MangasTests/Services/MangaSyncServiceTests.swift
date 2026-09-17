@@ -115,6 +115,22 @@ extension SharedMockSuites {
             #expect(try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).count == 20)
         }
 
+        @Test func `A page that arrives after the task was cancelled surfaces cancelled and leaves the store empty`() async throws {
+            let cancellingService = MangaSyncService(syncActor: actor, mangaRepository: CancellingMangaRepository())
+
+            // A child task, so the fake cancels the load and not the test itself.
+            let load = Task {
+                try await cancellingService.loadCatalogPage(mode: .all, page: 1, per: 20)
+            }
+            await expectAPIError(.cancelled) {
+                try await load.value
+            }
+
+            let context = PersistenceTestSupport.freshContext(container)
+            #expect(try PersistenceTestSupport.fetchAll(CatalogEntry.self, in: context).isEmpty)
+            #expect(try PersistenceTestSupport.fetchAll(Manga.self, in: context).isEmpty)
+        }
+
         // MARK: - bootstrap
 
         @Test func `bootstrap purges a catalog page older than seven days and reports the counts`() async throws {
