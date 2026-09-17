@@ -27,6 +27,22 @@ struct MangaSyncService {
             pageDTO = try await mangaRepository.fetchMangas(page: page, per: per)
         case .best:
             pageDTO = try await mangaRepository.fetchBestMangas(page: page, per: per)
+        case .byGenre(let genre):
+            pageDTO = try await mangaRepository.fetchMangasByGenre(genre, page: page, per: per)
+        case .byTheme(let theme):
+            pageDTO = try await mangaRepository.fetchMangasByTheme(theme, page: page, per: per)
+        case .byDemographic(let demographic):
+            pageDTO = try await mangaRepository.fetchMangasByDemographic(demographic, page: page, per: per)
+        case .byAuthor(let id, _):
+            pageDTO = try await mangaRepository.fetchMangasByAuthor(id, page: page, per: per)
+        case .titleContains(let query):
+            pageDTO = try await mangaRepository.searchContains(query, page: page, per: per)
+        case .beginsWith(let query):
+            // Not paginated by the server: the first `per` items are the whole result.
+            let items = Array(try await mangaRepository.searchBeginsWith(query).prefix(per))
+            pageDTO = MangaPageDTO(metadata: PageMetadataDTO(total: items.count, page: page, per: per), items: items)
+        case .search(let search):
+            pageDTO = try await mangaRepository.customSearch(search, page: page, per: per)
         }
         // Cancelled while the page was in flight: the caller has moved on, keep the store as it was.
         guard !Task.isCancelled else {

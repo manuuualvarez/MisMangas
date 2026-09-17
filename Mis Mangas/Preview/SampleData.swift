@@ -18,8 +18,13 @@ enum SampleData {
     static func page(for mode: CatalogMode, page: Int, per: Int) -> MangaPageDTO {
         let ordered: [MangaDTO]
         switch mode {
-        case .all: ordered = mangas
-        case .best: ordered = mangas.sorted { $0.score > $1.score }
+        case .all:
+            ordered = mangas
+        case .best:
+            ordered = mangas.sorted { $0.score > $1.score }
+        case .byGenre, .byTheme, .byDemographic, .byAuthor, .titleContains, .beginsWith, .search:
+            // No screen shows these modes from sample data yet: the whole sample stands in.
+            ordered = mangas
         }
         let start = min(max(page - 1, 0) * per, ordered.count)
         let end = min(start + per, ordered.count)
