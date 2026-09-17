@@ -14,6 +14,13 @@
 /// value of every environment key to decide which readers re-evaluate, and function values
 /// cannot be compared, so a closure would invalidate every reader on every write. A struct
 /// compares field by field, so readers stay put while nothing changed.
+///
+/// Isolated to the main actor because every conformer mutates UI state: bindings into a
+/// screen's `@State` or a `@MainActor` view model. The compiler would not demand it (a
+/// binding's setter is `nonisolated`), so without the annotation nothing would stop a future
+/// conformer from being called off the main actor; with it, the contract is checked at every
+/// call site and a conformer can talk to a view model without wrapping the call in a task.
+@MainActor
 protocol ApplyCatalogModeAction {
     /// Applies `mode` to the catalog behind the detail and closes the detail.
     func apply(_ mode: CatalogMode)
