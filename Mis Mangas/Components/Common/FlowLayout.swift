@@ -69,7 +69,11 @@ struct FlowLayout: Layout {
 #Preview("Chips", traits: .sampleData) {
     @Previewable @Query var mangas: [Manga]
     FlowLayout(spacing: 6) {
-        ForEach(mangas.flatMap(\.genres), id: \.self) { ChipView(text: $0) }
+        ForEach(mangas.flatMap(\.genres), id: \.self) { name in
+            Button(name) {}
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+        }
     }
     .padding()
 }
@@ -77,7 +81,11 @@ struct FlowLayout: Layout {
 // Every theme the API knows, including the long ones that must wrap at accessibility sizes.
 #Preview("Long chips") {
     FlowLayout(spacing: 6) {
-        ForEach(Theme.allCases.filter { $0 != .unknown }, id: \.self) { ChipView(text: $0.rawValue) }
+        ForEach(Theme.allCases.filter { $0 != .unknown }, id: \.self) { theme in
+            Button(theme.rawValue) {}
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+        }
     }
     .padding()
 }

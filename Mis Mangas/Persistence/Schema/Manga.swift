@@ -107,6 +107,11 @@ extension Manga {
         authors.first?.fullName
     }
 
+    /// Whether any classification list (demographics, genres, themes) has content.
+    var hasTags: Bool {
+        !(demographics.isEmpty && genres.isEmpty && themes.isEmpty)
+    }
+
     /// The score with two decimals in the user's locale.
     var formattedScore: String {
         score.formatted(.number.precision(.fractionLength(2)))

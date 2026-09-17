@@ -82,6 +82,11 @@ final class CatalogViewModel {
     /// in its own task: cancelling the caller (a view's `.task` going away) does not abort it.
     func loadInitial(mode: CatalogMode) async {
         currentTask?.cancel()
+        if mode != currentMode {
+            // The header total belongs to the mode that produced it; a refresh keeps it.
+            totalCount = nil
+            totalPages = nil
+        }
         currentMode = mode
         await run(mode: mode, page: 1)
     }

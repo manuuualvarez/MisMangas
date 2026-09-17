@@ -557,6 +557,38 @@ extension SharedMockSuites {
 
         // MARK: - Clear filter
 
+        @Test func `Switching mode drops the previous total until the new page lands`() async throws {
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            CatalogMockScenario.set(.mangaByGenre, .delayed(for: .milliseconds(300), then: .fixture("mangas_page.json")))
+            await viewModel.loadInitial(mode: .all)
+            #expect(viewModel.totalCount == allPage.metadata.total)
+
+            let viewModel = viewModel
+            let filtered = Task { await viewModel.loadInitial(mode: .byGenre("Romance")) }
+            try await Task.sleep(for: .milliseconds(50))
+
+            #expect(viewModel.isLoading)
+            #expect(viewModel.totalCount == nil)
+            #expect(viewModel.totalPages == nil)
+            await filtered.value
+            #expect(viewModel.totalCount == allPage.metadata.total)
+        }
+
+        @Test func `Refreshing the same mode keeps its total while the page reloads`() async throws {
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            await viewModel.loadInitial(mode: .all)
+            CatalogMockScenario.set(.listMangas, .delayed(for: .milliseconds(300), then: .fixture("mangas_page.json")))
+
+            let viewModel = viewModel
+            let refreshed = Task { await viewModel.refresh() }
+            try await Task.sleep(for: .milliseconds(50))
+
+            #expect(viewModel.isLoading)
+            #expect(viewModel.totalCount == allPage.metadata.total)
+            await refreshed.value
+            #expect(viewModel.totalCount == allPage.metadata.total)
+        }
+
         @Test func `clearFilter cancels the filter in flight and loads the whole catalog`() async throws {
             CatalogMockScenario.set(.mangaByGenre, .delayed(for: .milliseconds(300), then: .fixture("mangas_page.json")))
             CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))

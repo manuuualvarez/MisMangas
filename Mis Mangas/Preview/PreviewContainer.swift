@@ -10,9 +10,11 @@ import SwiftUI
 
 /// `#Preview(traits: .sampleData)`: an in-memory store filled with `SampleData` through the same
 /// actor as the app, plus `AppDependencies` over that store and a `PreviewMangaRepository` whose
-/// `catalog` behavior the preview picks. Covers download from the network, as in the app.
+/// `catalog` behavior the preview picks (`themes` governs `/list/themes` alone). Covers download
+/// from the network, as in the app.
 struct PreviewContainer: PreviewModifier {
     var catalog: PreviewMangaRepository.Behavior = .sample
+    var themes: PreviewMangaRepository.Behavior = .sample
 
     static func makeSharedContext() async throws -> ModelContainer {
         let container = try PersistenceController.makeInMemoryContainer()
@@ -27,7 +29,7 @@ struct PreviewContainer: PreviewModifier {
     func body(content: Content, context: ModelContainer) -> some View {
         content
             .modelContainer(context)
-            .environment(AppDependencies.preview(container: context, catalog: catalog))
+            .environment(AppDependencies.preview(container: context, catalog: catalog, themes: themes))
     }
 }
 
@@ -36,8 +38,12 @@ extension PreviewTrait where T == Preview.ViewTraits {
         .modifier(PreviewContainer())
     }
 
-    /// Sample store, but the catalog repository behaves as `catalog` on the next load.
-    static func sampleData(catalog: PreviewMangaRepository.Behavior) -> PreviewTrait<Preview.ViewTraits> {
-        .modifier(PreviewContainer(catalog: catalog))
+    /// Sample store, but the catalog repository behaves as `catalog` on the next load, and
+    /// `/list/themes` as `themes`.
+    static func sampleData(
+        catalog: PreviewMangaRepository.Behavior,
+        themes: PreviewMangaRepository.Behavior = .sample
+    ) -> PreviewTrait<Preview.ViewTraits> {
+        .modifier(PreviewContainer(catalog: catalog, themes: themes))
     }
 }

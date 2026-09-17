@@ -8,15 +8,38 @@
 import SwiftData
 import SwiftUI
 
-/// Demographics, genres and themes as read-only chips that wrap into as many rows as needed.
+/// Demographics, genres and themes as chips that wrap into as many rows as needed. Each chip
+/// filters the catalog that shows this detail by its category.
 struct MangaTagsView: View {
-    let tags: [String]
+    let demographics: [String]
+    let genres: [String]
+    let themes: [String]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             DetailSectionTitleView(title: "Tags")
             FlowLayout(spacing: 6) {
-                ForEach(tags, id: \.self) { ChipView(text: $0) }
+                ForEach(demographics, id: \.self) { name in
+                    FilterChipView(
+                        mode: .byDemographic(name),
+                        accessibilityLabel: String(localized: "\(name), demographic"),
+                        hint: "Shows mangas for this demographic"
+                    )
+                }
+                ForEach(genres, id: \.self) { name in
+                    FilterChipView(
+                        mode: .byGenre(name),
+                        accessibilityLabel: String(localized: "\(name), genre"),
+                        hint: "Shows mangas with this genre"
+                    )
+                }
+                ForEach(themes, id: \.self) { name in
+                    FilterChipView(
+                        mode: .byTheme(name),
+                        accessibilityLabel: String(localized: "\(name), theme"),
+                        hint: "Shows mangas with this theme"
+                    )
+                }
             }
         }
     }
@@ -24,5 +47,7 @@ struct MangaTagsView: View {
 
 #Preview("Tags", traits: .sampleData) {
     @Previewable @Query var mangas: [Manga]
-    if let manga = mangas.first { MangaTagsView(tags: manga.demographics + manga.genres + manga.themes).padding() }
+    if let manga = mangas.first(where: { $0.id == 2 }) {
+        MangaTagsView(demographics: manga.demographics, genres: manga.genres, themes: manga.themes).padding()
+    }
 }
