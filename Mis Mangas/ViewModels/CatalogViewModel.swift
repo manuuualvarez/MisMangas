@@ -26,6 +26,15 @@ final class CatalogViewModel {
     private(set) var loadError: APIError?
     let perPage = 20
 
+    /// `true` when a filtered mode failed because the server does not know its category (a 404):
+    /// read as "no results" rather than as a failure, since asking again would not change it.
+    var isModeNotFound: Bool {
+        guard currentMode.isFiltered, case .notFound? = loadError else {
+            return false
+        }
+        return true
+    }
+
     // MARK: Filters
 
     /// The three classification lists; `nil` until the first load. A list that failed stays
@@ -43,17 +52,27 @@ final class CatalogViewModel {
     private(set) var suggestionsKey: String?
     private(set) var authorQuery = ""
     private(set) var authorResults: [AuthorDTO] = []
+    /// `true` from the key stroke that starts an author request until its results or failure
+    /// land, so a picker can tell "nothing yet" from "nothing found".
+    private(set) var isSearchingAuthors = false
     /// The failure of the last suggestions or author request; `nil` once a later one succeeds
     /// or the field drops below its minimum. A cancellation is not a failure and never lands here.
     private(set) var searchError: APIError?
     /// The advanced search form, kept for the whole session so it reopens as it was left.
     var searchDraft: CustomSearch = .empty
 
+    /// Whether the field has asked for authors at all: below the minimum nothing was searched,
+    /// so an empty result is "nothing typed yet" rather than "nothing found".
+    var hasAuthorQuery: Bool {
+        authorQuery.count >= Self.minimumAuthorQuery
+    }
+
     /// How many title suggestions are kept.
     private static let suggestionLimit = 8
     /// Pause after the last key stroke before a suggestions or author request goes out.
     private static let debounce: Duration = .milliseconds(300)
     private static let minimumTitleQuery = 3
+    /// Characters an author query needs before a request goes out; below it nothing was searched.
     private static let minimumAuthorQuery = 2
 
     private let syncService: MangaSyncService
@@ -114,11 +133,6 @@ final class CatalogViewModel {
         await run(mode: currentMode, page: lastRequestedPage)
     }
 
-    /// Back to the whole catalog, cancelling whatever filter was loading.
-    func clearFilter() async {
-        await loadInitial(mode: .all)
-    }
-
     // MARK: - Taxonomies
 
     /// Loads the lists that are still missing, the three in parallel on the first call. A list
@@ -161,6 +175,20 @@ final class CatalogViewModel {
         taxonomyError = [loaded.0, loaded.1, loaded.2].compactMap(Self.failure).first
     }
 
+    // MARK: - Search
+
+    /// Sends the field to the request of the scope in force. Called on every change of the text
+    /// and of the scope, so switching scope with text already typed searches it again in the
+    /// new domain.
+    func search(_ text: String) {
+        switch searchScope {
+        case .titles:
+            updateSearchText(text)
+        case .authors:
+            searchAuthors(text)
+        }
+    }
+
     // MARK: - Title search
 
     /// Called on every change of the search field. Fewer than three characters clear the
@@ -169,10 +197,12 @@ final class CatalogViewModel {
     /// request never writes its index nor changes the key, so only the last text survives.
     func updateSearchText(_ text: String) {
         suggestionsTask?.cancel()
+        // The failure on screen belongs to the text that produced it: a new request owns the
+        // field from here on, whether it succeeds or not.
+        searchError = nil
         guard text.count >= Self.minimumTitleQuery else {
             suggestionsTask = nil
             suggestionsKey = nil
-            searchError = nil
             return
         }
         suggestionsTask = Task {
@@ -199,11 +229,12 @@ final class CatalogViewModel {
     }
 
     /// Sends the field as a title search: a paginated mode that replaces the catalog on screen.
-    /// The suggestions are dismissed. An empty field submits nothing.
+    /// The suggestions are dismissed. An empty field submits nothing, and neither does the
+    /// Authors scope, whose results are chosen from the rows of the matching authors.
     func submitSearch() async {
         suggestionsTask?.cancel()
         suggestionsKey = nil
-        guard !searchText.isEmpty else {
+        guard searchScope == .titles, !searchText.isEmpty else {
             return
         }
         await loadInitial(mode: .titleContains(searchText))
@@ -212,15 +243,20 @@ final class CatalogViewModel {
     // MARK: - Authors
 
     /// Same debounce as the titles, from two characters on. Fewer characters clear the results.
+    /// The request counts as in flight from this call until its outcome lands; a newer key
+    /// stroke takes the flag over, so a cancelled request never clears it.
     func searchAuthors(_ query: String) {
         authorTask?.cancel()
         authorQuery = query
+        // Same rule as the titles: the failure on screen belongs to the text that produced it.
+        searchError = nil
         guard query.count >= Self.minimumAuthorQuery else {
             authorTask = nil
             authorResults = []
-            searchError = nil
+            isSearchingAuthors = false
             return
         }
+        isSearchingAuthors = true
         let repository = syncService.mangaRepository
         authorTask = Task {
             guard await Self.debounceElapsed() else {
@@ -235,6 +271,7 @@ final class CatalogViewModel {
                     return
                 }
                 searchError = error
+                isSearchingAuthors = false
                 return
             }
             guard !Task.isCancelled else {
@@ -242,15 +279,13 @@ final class CatalogViewModel {
             }
             searchError = nil
             authorResults = results
+            isSearchingAuthors = false
         }
     }
 
     /// Lists the works of `author`, titled with the name as the backend spells it.
     func select(author: AuthorDTO) async {
-        let name = [author.firstName, author.lastName]
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        await loadInitial(mode: .byAuthor(id: author.id, name: name))
+        await loadInitial(mode: .byAuthor(id: author.id, name: author.displayName))
     }
 
     // MARK: - Advanced search
@@ -318,17 +353,17 @@ final class CatalogViewModel {
             return .success(existing)
         }
         do throws(APIError) {
-            return .success(try await fetch())
+            return try .success(await fetch())
         } catch {
             return .failure(error)
         }
     }
 
     private static func values(_ result: Result<[String], APIError>) -> [String] {
-        if case .success(let values) = result { values } else { [] }
+        if case let .success(values) = result { values } else { [] }
     }
 
     private static func failure(_ result: Result<[String], APIError>) -> APIError? {
-        if case .failure(let error) = result { error } else { nil }
+        if case let .failure(error) = result { error } else { nil }
     }
 }

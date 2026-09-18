@@ -112,6 +112,17 @@ extension Manga {
         !(demographics.isEmpty && genres.isEmpty && themes.isEmpty)
     }
 
+    /// The Japanese title tagged as Japanese, so the text is typeset with Japanese rules and
+    /// assistive technologies speak it in Japanese instead of in the app's language.
+    var attributedJapaneseTitle: AttributedString? {
+        guard let titleJapanese else {
+            return nil
+        }
+        var attributed = AttributedString(titleJapanese)
+        attributed.languageIdentifier = "ja"
+        return attributed
+    }
+
     /// The score with two decimals in the user's locale.
     var formattedScore: String {
         score.formatted(.number.precision(.fractionLength(2)))

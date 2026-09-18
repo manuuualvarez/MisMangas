@@ -30,7 +30,7 @@ struct CatalogGridView: View {
     var body: some View {
         ScrollView {
             if entries.isEmpty {
-                placeholder
+                CatalogPlaceholderView(viewModel: viewModel)
                     .frame(maxWidth: .infinity, minHeight: 360)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumColumnWidth), spacing: 12)], alignment: .leading, spacing: 16) {
@@ -71,22 +71,6 @@ struct CatalogGridView: View {
         .onChange(of: viewModel.loadError?.errorDescription) { _, description in
             if let description, !entries.isEmpty {
                 AccessibilityNotification.Announcement(description).post()
-            }
-        }
-    }
-
-    /// Same first-load, failure and empty states as the list, inside the scroll view.
-    @ViewBuilder
-    private var placeholder: some View {
-        if viewModel.isLoading {
-            ProgressView("Loading catalog…")
-        } else if let error = viewModel.loadError {
-            ErrorStateView(error: error) {
-                Task { await viewModel.refresh() }
-            }
-        } else {
-            EmptyStateView(title: "No mangas yet", systemImage: "books.vertical") {
-                Task { await viewModel.refresh() }
             }
         }
     }

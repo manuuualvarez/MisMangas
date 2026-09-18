@@ -208,6 +208,19 @@ struct MappingTests {
         #expect(label == "Monster, score \(Self.monsterScoreText)")
     }
 
+    @Test func `attributedJapaneseTitle tags the Japanese title with the Japanese language identifier`() throws {
+        let manga = try Self.monster().makeManga()
+        manga.titleJapanese = "モンスター"
+
+        let attributed = try #require(manga.attributedJapaneseTitle)
+
+        #expect(String(attributed.characters) == "モンスター")
+        #expect(attributed.languageIdentifier == "ja")
+
+        manga.titleJapanese = nil
+        #expect(manga.attributedJapaneseTitle == nil)
+    }
+
     // MARK: - Inline fixture (shape from the backend OpenAPI)
 
     private static func mangaJSON(

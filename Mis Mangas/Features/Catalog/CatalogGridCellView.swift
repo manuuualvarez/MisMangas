@@ -19,6 +19,8 @@ struct CatalogGridCellView: View {
     var isSelected = false
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The selection outline grows with the text size, so it stays visible next to larger cells.
+    @ScaledMetric(relativeTo: .subheadline) private var selectionLineWidth: CGFloat = 3
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -26,7 +28,7 @@ struct CatalogGridCellView: View {
                 .matchedTransitionSource(id: manga.id, in: namespace)
                 .overlay {
                     RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(.tint, lineWidth: isSelected ? 3 : 0)
+                        .strokeBorder(.tint, lineWidth: isSelected ? selectionLineWidth : 0)
                 }
             Text(manga.title)
                 .font(.subheadline.weight(.semibold))

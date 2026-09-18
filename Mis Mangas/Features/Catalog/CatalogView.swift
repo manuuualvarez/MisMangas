@@ -53,7 +53,7 @@ struct CatalogView: View {
                 }
             }
             .navigationTitle(selectedMode.title)
-            .navigationSubtitle(subtitle)
+            .navigationSubtitle(.catalogTotal(viewModel.totalCount, isFailed: viewModel.loadError != nil))
             .toolbar(removing: .sidebarToggle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -71,6 +71,8 @@ struct CatalogView: View {
                     } label: {
                         Label("Options", systemImage: displayMode.systemImage)
                     }
+                    .accessibilityValue(Text(displayMode.title))
+                    .accessibilityHint("Changes the layout, opens the filters or clears the filter")
                 }
             }
             .navigationDestination(item: $selectedManga) { manga in
@@ -108,18 +110,6 @@ struct CatalogView: View {
     /// and the menu. A mode change always closes the detail.
     private var modeApplier: SelectedModeApplier {
         SelectedModeApplier(mode: $selectedMode, selectedManga: $selectedManga)
-    }
-
-    /// Never empty: the large title bar sizes itself on the first layout and does not grow
-    /// when a subtitle appears later, so a placeholder reserves the line until the total arrives.
-    private var subtitle: Text {
-        if let total = viewModel.totalCount {
-            Text("\(total, format: .number) mangas")
-        } else if viewModel.loadError != nil {
-            Text(verbatim: "—")
-        } else {
-            Text("Loading…")
-        }
     }
 }
 

@@ -110,6 +110,22 @@ extension SharedMockSuites {
 
         // MARK: - Category filters
 
+        @Test func `A category the server does not list reads as nothing found, not as a failure`() async throws {
+            CatalogMockScenario.set(.mangaByGenre, .status(404))
+            CatalogMockScenario.set(.listMangas, .status(404))
+
+            await viewModel.loadInitial(mode: .byGenre("zzz"))
+
+            let error = try #require(viewModel.loadError)
+            expectAPIError(.notFound, matches: error)
+            #expect(viewModel.isModeNotFound)
+
+            await viewModel.loadInitial(mode: .all)
+
+            try expectAPIError(.notFound, matches: #require(viewModel.loadError))
+            #expect(!viewModel.isModeNotFound)
+        }
+
         @Test func `loadInitial byGenre requests the genre route paginated and indexes the page under its key`() async throws {
             CatalogMockScenario.set(.mangaByGenre, .fixture("mangas_page.json"))
 
@@ -310,7 +326,7 @@ extension SharedMockSuites {
             #expect(viewModel.suggestionsKey == "begins:drag")
         }
 
-        @Test func `Typing below the minimum clears a pending searchError`() async throws {
+        @Test func `Typing below the minimum clears a pending searchError`() async {
             CatalogMockScenario.set(.mangasBeginsWith, .status(500))
             viewModel.updateSearchText("dra")
             await viewModel.suggestionsTask?.value
@@ -320,6 +336,68 @@ extension SharedMockSuites {
 
             #expect(viewModel.searchError == nil)
             #expect(viewModel.suggestionsKey == nil)
+        }
+
+        // MARK: - Routing the field by its scope
+
+        @Test func `search sends the text to the request of the scope in force`() async {
+            CatalogMockScenario.set(.mangasBeginsWith, .fixture("mangas_begins_dra.json"))
+            CatalogMockScenario.set(.searchAuthor, .fixture("authors_toriyama.json"))
+
+            viewModel.search("dra")
+            await viewModel.suggestionsTask?.value
+
+            #expect(CatalogMockScenario.hits(.mangasBeginsWith) == 1)
+            #expect(CatalogMockScenario.hits(.searchAuthor) == 0)
+            #expect(viewModel.suggestionsKey == "begins:dra")
+
+            viewModel.searchScope = .authors
+            viewModel.search("toriya")
+            await viewModel.authorTask?.value
+
+            #expect(CatalogMockScenario.hits(.searchAuthor) == 1)
+            #expect(CatalogMockScenario.hits(.mangasBeginsWith) == 1)
+            #expect(viewModel.authorResults.first?.lastName == "Toriyama")
+        }
+
+        @Test func `submitSearch sends nothing while the Authors scope is in force`() async {
+            CatalogMockScenario.set(.mangasContains, .fixture("mangas_contains_ball.json"))
+            viewModel.searchScope = .authors
+            viewModel.searchText = "ball"
+
+            await viewModel.submitSearch()
+
+            #expect(CatalogMockScenario.hits(.mangasContains) == 0)
+            #expect(viewModel.currentMode == .all)
+            #expect(!viewModel.currentMode.isFiltered)
+        }
+
+        @Test func `A new search clears the failure of the previous one before requesting`() async {
+            CatalogMockScenario.set(.searchAuthor, .status(500))
+            viewModel.searchAuthors("toriya")
+            await viewModel.authorTask?.value
+            #expect(viewModel.searchError != nil)
+
+            CatalogMockScenario.set(.searchAuthor, .fixture("authors_toriyama.json"))
+            viewModel.searchAuthors("toriyam")
+
+            // Cleared when the request starts, not only when its answer arrives.
+            #expect(viewModel.searchError == nil)
+            await viewModel.authorTask?.value
+            #expect(viewModel.searchError == nil)
+            #expect(!viewModel.authorResults.isEmpty)
+        }
+
+        @Test func `hasAuthorQuery says whether the field asked for authors at all`() async {
+            CatalogMockScenario.set(.searchAuthor, .fixture("authors_toriyama.json"))
+            #expect(!viewModel.hasAuthorQuery)
+
+            viewModel.searchAuthors("to")
+            await viewModel.authorTask?.value
+            #expect(viewModel.hasAuthorQuery)
+
+            viewModel.searchAuthors("t")
+            #expect(!viewModel.hasAuthorQuery)
         }
 
         // MARK: - Submit a title search
@@ -371,7 +449,7 @@ extension SharedMockSuites {
             #expect(viewModel.authorResults.first?.role == .storyAndArt)
         }
 
-        @Test func `searchAuthors with a single character requests nothing and leaves no results`() async throws {
+        @Test func `searchAuthors with a single character requests nothing and leaves no results`() async {
             CatalogMockScenario.set(.searchAuthor, .fixture("authors_toriyama.json"))
 
             viewModel.searchAuthors("t")
@@ -379,6 +457,32 @@ extension SharedMockSuites {
 
             #expect(CatalogMockScenario.hits(.searchAuthor) == 0)
             #expect(viewModel.authorResults.isEmpty)
+        }
+
+        @Test func `searchAuthors is in flight from the key stroke until the results land`() async {
+            CatalogMockScenario.set(.searchAuthor, .fixture("authors_toriyama.json"))
+            #expect(!viewModel.isSearchingAuthors)
+
+            viewModel.searchAuthors("toriya")
+            #expect(viewModel.isSearchingAuthors)
+
+            await viewModel.authorTask?.value
+            #expect(!viewModel.isSearchingAuthors)
+            #expect(viewModel.authorResults.count == 6)
+        }
+
+        @Test func `searchAuthors is no longer in flight after a failure or below the minimum`() async {
+            CatalogMockScenario.set(.searchAuthor, .status(500))
+
+            viewModel.searchAuthors("toriya")
+            await viewModel.authorTask?.value
+            #expect(!viewModel.isSearchingAuthors)
+            #expect(viewModel.searchError != nil)
+
+            viewModel.searchAuthors("toriya")
+            #expect(viewModel.isSearchingAuthors)
+            viewModel.searchAuthors("t")
+            #expect(!viewModel.isSearchingAuthors)
         }
 
         @Test func `Rapid author typing collapses into one request for the last query`() async throws {
@@ -587,34 +691,6 @@ extension SharedMockSuites {
             #expect(viewModel.totalCount == allPage.metadata.total)
             await refreshed.value
             #expect(viewModel.totalCount == allPage.metadata.total)
-        }
-
-        @Test func `clearFilter cancels the filter in flight and loads the whole catalog`() async throws {
-            CatalogMockScenario.set(.mangaByGenre, .delayed(for: .milliseconds(300), then: .fixture("mangas_page.json")))
-            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
-            let viewModel = viewModel
-            let stale = Task { await viewModel.loadInitial(mode: .byGenre("Romance")) }
-            try await Task.sleep(for: .milliseconds(50))
-            #expect(viewModel.currentMode == .byGenre("Romance"))
-
-            await viewModel.clearFilter()
-
-            await stale.value
-            // Longer than the mock delay: a late "Romance" response would have landed by now.
-            try await Task.sleep(for: .milliseconds(400))
-            #expect(CatalogMockScenario.hits(.mangaByGenre) == 1)
-            #expect(CatalogMockScenario.hits(.listMangas) == 1)
-            #expect(viewModel.currentMode == .all)
-            #expect(!viewModel.currentMode.isFiltered)
-            #expect(viewModel.currentPage == 1)
-            #expect(viewModel.loadError == nil)
-            #expect(!viewModel.isLoading)
-
-            let context = PersistenceTestSupport.freshContext(container)
-            let all = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
-            #expect(all.map(\.ordinal) == Array(0 ..< 20))
-            #expect(all.compactMap(\.manga?.id) == allPage.items.map(\.id))
-            #expect(try PersistenceTestSupport.catalogEntries(modeKey: "genre:Romance", in: context).isEmpty)
         }
     }
 }

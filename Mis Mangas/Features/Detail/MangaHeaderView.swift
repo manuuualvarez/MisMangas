@@ -26,7 +26,7 @@ struct MangaHeaderView: View {
                         .font(.subheadline)
                         .foregroundStyle(.mmSecondaryLabel)
                 }
-                if let japanese = manga.titleJapanese {
+                if let japanese = manga.attributedJapaneseTitle {
                     Text(japanese)
                         .font(.subheadline)
                         .foregroundStyle(.mmSecondaryLabel)
