@@ -28,14 +28,16 @@ struct MangaCardView: View {
                 Text(manga.title)
                     .font(.headline)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                // Every line keeps the primary colour, which the system turns white over a
+                // selected row. Secondary text is a translucent white there and cannot pass half
+                // the contrast of the fill beneath it (measured 3.02:1 in light, 2.43:1 in dark),
+                // so the hierarchy is carried by size and weight instead of by colour.
                 if let author = manga.primaryAuthorName {
                     Text(author)
                         .font(.subheadline)
-                        .foregroundStyle(.mmSecondaryLabel)
                 }
                 Label(manga.formattedScore, systemImage: "star.fill")
                     .font(.caption)
-                    .foregroundStyle(.mmSecondaryLabel)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

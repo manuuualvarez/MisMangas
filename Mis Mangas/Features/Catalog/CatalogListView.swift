@@ -26,7 +26,9 @@ struct CatalogListView: View {
     }
 
     var body: some View {
-        List {
+        // The list owns the selection and the split view's detail column follows it: that is
+        // what draws the platform's own highlight on the selected row.
+        List(selection: $selection) {
             if entries.isEmpty {
                 // Inside the list so the bars lay out against a scroll view.
                 CatalogPlaceholderView(viewModel: viewModel)
@@ -35,28 +37,14 @@ struct CatalogListView: View {
             } else {
                 ForEach(entries) { entry in
                     if let manga = entry.manga {
-                        // A button, not a selectable row: a collapsed split view takes a
-                        // sidebar selection as "show the detail column" and pushed its
-                        // placeholder instead of the manga. Writing the selection from the
-                        // button leaves the destination in charge, as the grid already did.
-                        Button {
-                            selection = manga
-                        } label: {
-                            MangaCardView(manga: manga, namespace: namespace)
-                                // The whole row answers the tap, not only the text and the
-                                // cover: a wide row leaves empty space on its trailing side.
-                                .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        // `nil` keeps the list's own row background for every other row.
-                        .listRowBackground(selection == manga ? Color.mmSurface : nil)
-                        .accessibilityAddTraits(selection == manga ? .isSelected : [])
-                        .listRowSeparator(entry === entries.first ? .hidden : .visible, edges: .top)
-                        .onAppear {
-                            if entry === entries.last {
-                                Task { await viewModel.loadMore() }
+                        MangaCardView(manga: manga, namespace: namespace)
+                            .tag(manga)
+                            .listRowSeparator(entry === entries.first ? .hidden : .visible, edges: .top)
+                            .onAppear {
+                                if entry === entries.last {
+                                    Task { await viewModel.loadMore() }
+                                }
                             }
-                        }
                     }
                 }
                 if let error = viewModel.loadError {

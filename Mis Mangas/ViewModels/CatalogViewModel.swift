@@ -58,8 +58,38 @@ final class CatalogViewModel {
     /// The failure of the last suggestions or author request; `nil` once a later one succeeds
     /// or the field drops below its minimum. A cancellation is not a failure and never lands here.
     private(set) var searchError: APIError?
-    /// The advanced search form, kept for the whole session so it reopens as it was left.
-    var searchDraft: CustomSearch = .empty
+    /// Fields of the advanced search form, kept for the whole session so it reopens as it was
+    /// left. The form binds to them directly.
+    var draftTitle = ""
+    var draftAuthorFirstName = ""
+    var draftAuthorLastName = ""
+    var draftGenres: Set<String> = []
+    var draftThemes: Set<String> = []
+    var draftDemographics: Set<String> = []
+    var draftContains = false
+
+    /// The form read as a search request. Every list keeps the order the server sent it in, so
+    /// the same picks always produce the same body and the same index key; without the lists,
+    /// alphabetical order. Strings travel untrimmed: `normalized` is what cleans them before
+    /// they go on the wire.
+    var searchDraft: CustomSearch {
+        CustomSearch(
+            searchTitle: draftTitle,
+            searchAuthorFirstName: draftAuthorFirstName,
+            searchAuthorLastName: draftAuthorLastName,
+            searchGenres: ordered(draftGenres, as: taxonomies?.genres),
+            searchThemes: ordered(draftThemes, as: taxonomies?.themes),
+            searchDemographics: ordered(draftDemographics, as: taxonomies?.demographics),
+            searchContains: draftContains
+        )
+    }
+
+    /// Whether the form carries no criteria at all, so a screen can tell that there is nothing
+    /// to clear. Blank fields and untouched lists do not count: what matters is what would
+    /// travel to the server.
+    var isDraftEmpty: Bool {
+        searchDraft.normalized == .empty
+    }
 
     /// Whether the field has asked for authors at all: below the minimum nothing was searched,
     /// so an empty result is "nothing typed yet" rather than "nothing found".
@@ -295,11 +325,26 @@ final class CatalogViewModel {
         await loadInitial(mode: .search(searchDraft.normalized))
     }
 
+    /// Returns every field of the form to its initial value.
     func resetDraft() {
-        searchDraft = .empty
+        draftTitle = ""
+        draftAuthorFirstName = ""
+        draftAuthorLastName = ""
+        draftGenres = []
+        draftThemes = []
+        draftDemographics = []
+        draftContains = false
     }
 
     // MARK: - Private
+
+    /// The picked values in the order of the list they came from, or alphabetical while that
+    /// list is missing. A `Set` has no order of its own and its iteration changes between runs,
+    /// which would change the body and the index key of the same search.
+    private func ordered(_ picked: Set<String>, as list: [String]?) -> [String] {
+        guard let list else { return picked.sorted() }
+        return list.filter(picked.contains)
+    }
 
     /// Waits out the debounce. `false` when a newer key stroke cancelled the wait, the only
     /// reason the sleep can end early.

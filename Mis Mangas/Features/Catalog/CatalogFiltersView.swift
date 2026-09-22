@@ -9,8 +9,7 @@ import SwiftUI
 
 /// The filter form of the catalog: a picker per category fed by the server's lists, edited on a
 /// draft and applied to the catalog on "Apply" through the same action the detail's chips use.
-/// Presented as an inspector: a trailing column in a regular width, a sheet in a compact one,
-/// by the system's own adaptation.
+/// Presented as a sheet with its own navigation bar: title, Close and Apply.
 struct CatalogFiltersView: View {
     /// The mode the catalog shows now: what the draft opens on and what "Apply" replaces.
     let mode: CatalogMode
@@ -26,55 +25,59 @@ struct CatalogFiltersView: View {
     }
 
     var body: some View {
-        Form {
-            CatalogFilterPickerView(
-                title: "Genre",
-                unavailableTitle: "Couldn't load genres",
-                options: viewModel.taxonomies?.genres,
-                error: viewModel.taxonomyError,
-                selection: $draft.genre
-            ) {
-                Task { await viewModel.loadTaxonomies() }
-            }
-            CatalogFilterPickerView(
-                title: "Theme",
-                unavailableTitle: "Couldn't load themes",
-                options: viewModel.taxonomies?.themes,
-                error: viewModel.taxonomyError,
-                selection: $draft.theme
-            ) {
-                Task { await viewModel.loadTaxonomies() }
-            }
-            CatalogFilterPickerView(
-                title: "Demographic",
-                unavailableTitle: "Couldn't load demographics",
-                options: viewModel.taxonomies?.demographics,
-                error: viewModel.taxonomyError,
-                selection: $draft.demographic
-            ) {
-                Task { await viewModel.loadTaxonomies() }
-            }
-            Section {
-                Button("Apply") {
-                    applyCatalogMode?.apply(draft.applied(to: mode))
-                    dismiss()
+        NavigationStack {
+            Form {
+                CatalogFilterPickerView(
+                    title: "Genre",
+                    unavailableTitle: "Couldn't load genres",
+                    options: viewModel.taxonomies?.genres,
+                    error: viewModel.taxonomyError,
+                    selection: $draft.genre
+                ) {
+                    Task { await viewModel.loadTaxonomies() }
                 }
-                Button("Clear filter") {
-                    applyCatalogMode?.apply(.all)
-                    dismiss()
+                CatalogFilterPickerView(
+                    title: "Theme",
+                    unavailableTitle: "Couldn't load themes",
+                    options: viewModel.taxonomies?.themes,
+                    error: viewModel.taxonomyError,
+                    selection: $draft.theme
+                ) {
+                    Task { await viewModel.loadTaxonomies() }
                 }
-                .disabled(!mode.isFiltered)
-            } footer: {
-                Text("One category at a time: choosing a genre, theme or demographic sets the other two to Any.")
+                CatalogFilterPickerView(
+                    title: "Demographic",
+                    unavailableTitle: "Couldn't load demographics",
+                    options: viewModel.taxonomies?.demographics,
+                    error: viewModel.taxonomyError,
+                    selection: $draft.demographic
+                ) {
+                    Task { await viewModel.loadTaxonomies() }
+                }
+                Section {
+                    Button("Clear filter", role: .destructive) {
+                        applyCatalogMode?.apply(.all)
+                        dismiss()
+                    }
+                    .disabled(!mode.isFiltered)
+                } footer: {
+                    Text("One category at a time: choosing a genre, theme or demographic sets the other two to Any.")
+                }
             }
-        }
-        .safeAreaInset(edge: .top, alignment: .leading) {
-            // The inspector has no navigation bar of its own: the heading is part of the content.
-            Text("Filters")
-                .font(.title2.bold())
-                .padding(.horizontal)
-                .padding(.top)
-                .accessibilityAddTraits(.isHeader)
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Symbols, not words: the text stays as the accessible name of each button.
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply", systemImage: "checkmark") {
+                        applyCatalogMode?.apply(draft.applied(to: mode))
+                        dismiss()
+                    }
+                }
+            }
         }
         // The form outlives its presentations: a mode applied elsewhere (menu, chip) resets the draft.
         .onChange(of: mode) { _, mode in

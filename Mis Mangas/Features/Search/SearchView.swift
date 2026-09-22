@@ -5,6 +5,7 @@
 //  Created by Manuel Alvarez on 17/09/2026.
 //
 
+import Accessibility
 import SwiftUI
 
 /// The search tab: one field for titles and authors, told apart by a scope. Titles suggest while
@@ -15,6 +16,7 @@ import SwiftUI
 struct SearchView: View {
     @State private var viewModel: CatalogViewModel
     @State private var selectedManga: Manga?
+    @State private var isPresentingAdvancedSearch = false
     @AppStorage("catalog.displayMode") private var displayMode: DisplayMode = .grid
     @Namespace private var heroNamespace
 
@@ -52,12 +54,19 @@ struct SearchView: View {
             }
             // The grid and the list build their query when created: a new mode needs a new one.
             .id(viewModel.currentMode)
+            // The first column of a split view is dressed as a sidebar, and this one is content:
+            // the tab bar already is the app's sidebar. Content reads on the plain background.
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemBackground))
             .navigationTitle(title)
             .navigationSubtitle(subtitle)
             .toolbar(removing: .sidebarToggle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(displayMode.toggled.title, systemImage: displayMode.toggled.systemImage) {
+                    // The icon shows the layout in use, as the catalog's menu does: the same
+                    // picture must not mean "you are on the grid" in one tab and "go to the
+                    // grid" in the other.
+                    Button(displayMode.toggled.title, systemImage: displayMode.systemImage) {
                         displayMode = displayMode.toggled
                     }
                     // Read as the control it is ("Layout, Grid") rather than as the layout it
@@ -66,6 +75,14 @@ struct SearchView: View {
                     .accessibilityValue(Text(displayMode.title))
                     .accessibilityHint(displayMode.toggled == .list ? "Shows the results as a list" : "Shows the results as a grid")
                     .disabled(!viewModel.currentMode.isFiltered)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    // A sheet returns the binding to false when it is dismissed, so the
+                    // button only has to present it.
+                    Button("Advanced search", systemImage: "slider.horizontal.3") {
+                        isPresentingAdvancedSearch = true
+                    }
+                    .accessibilityHint("Searches by title, author and several categories at once")
                 }
             }
             .searchable(text: $viewModel.searchText, prompt: "Titles or authors")
@@ -100,13 +117,22 @@ struct SearchView: View {
             .onChange(of: viewModel.searchScope) { _, _ in
                 viewModel.search(viewModel.searchText)
             }
-            .navigationDestination(item: $selectedManga) { manga in
-                MangaDetailView(manga: manga)
-                    .navigationTransition(.zoom(sourceID: manga.id, in: heroNamespace))
+            // A sheet, not an inspector: a form that is filled, applied and closed is a modal
+            // in every Apple app, and in a compact width the inspector merged its navigation
+            // bar into this screen's and took the search field's place as first responder.
+            .sheet(isPresented: $isPresentingAdvancedSearch) {
+                AdvancedSearchView(viewModel: viewModel)
             }
             .navigationSplitViewColumnWidth(min: 380, ideal: 520, max: 720)
         } detail: {
-            ContentUnavailableView("Select a manga", systemImage: "book.closed")
+            // The detail column is the destination of the selection: in a regular width it is
+            // the second column, and collapsed the split view pushes it on its own.
+            if let selectedManga {
+                MangaDetailView(manga: selectedManga)
+                    .navigationTransition(.zoom(sourceID: selectedManga.id, in: heroNamespace))
+            } else {
+                ContentUnavailableView("Select a manga", systemImage: "book.closed")
+            }
         }
         .navigationSplitViewStyle(.balanced)
         .environment(\.applyCatalogMode, SearchModeApplier(viewModel: viewModel, selectedManga: $selectedManga))
@@ -117,7 +143,12 @@ struct SearchView: View {
         }
         .onChange(of: viewModel.suggestionsKey) { _, key in
             if key != nil {
-                AccessibilityNotification.Announcement(String(localized: "Suggestions updated")).post()
+                // Low priority, because this fires once per debounce while the field is being
+                // typed into: at the usual priority it cuts the echo of the very keys the
+                // reader is pressing. Dropped when VoiceOver is already speaking.
+                var announcement = AttributedString(localized: "Suggestions updated")
+                announcement.accessibilitySpeechAnnouncementPriority = .low
+                AccessibilityNotification.Announcement(announcement).post()
             }
         }
         .onChange(of: viewModel.authorResults.count) { _, count in
@@ -125,11 +156,13 @@ struct SearchView: View {
                 return
             }
             // One form per count: a single match must not be announced as "1 authors found".
-            let message = switch count {
-            case 0: String(localized: "No authors found")
-            case 1: String(localized: "1 author found")
-            default: String(localized: "\(count) authors found")
+            var message = switch count {
+            case 0: AttributedString(localized: "No authors found")
+            case 1: AttributedString(localized: "1 author found")
+            default: AttributedString(localized: "\(count) authors found")
             }
+            // Same reason as the suggestions: these land while the field is being typed into.
+            message.accessibilitySpeechAnnouncementPriority = .low
             AccessibilityNotification.Announcement(message).post()
         }
         .onChange(of: viewModel.searchError?.errorDescription) { _, description in

@@ -9,9 +9,9 @@ import SwiftUI
 
 /// The catalog screen: the mode as title with the server total, the All / Best picker while no
 /// filter is active, and the mangas of the mode as a grid (default) or a list, chosen from the
-/// toolbar menu and remembered. The same menu opens the filter form, an inspector the system
-/// shows as a trailing column or a sheet. A two-column split view: the catalog leads and the
-/// selected manga fills the detail column on iPad; on iPhone the columns collapse into one
+/// toolbar menu and remembered. The same menu opens the filter form as a sheet. A two-column
+/// split view: the catalog leads and the selected manga fills the detail column on iPad; on
+/// iPhone the columns collapse into one
 /// stack and the detail is pushed. A chip in the detail applies its category here: the detail
 /// closes and the mode changes. Each mode change rebuilds the content so its query follows it.
 struct CatalogView: View {
@@ -47,6 +47,10 @@ struct CatalogView: View {
                     )
                 }
             }
+            // The first column of a split view is dressed as a sidebar, and this one is content:
+            // the tab bar already is the app's sidebar. Content reads on the plain background.
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemBackground))
             .safeAreaBar(edge: .top) {
                 if !selectedMode.isFiltered {
                     CatalogModePickerView(selection: $selectedMode)
@@ -62,7 +66,9 @@ struct CatalogView: View {
                             Label("Grid", systemImage: DisplayMode.grid.systemImage).tag(DisplayMode.grid)
                             Label("List", systemImage: DisplayMode.list.systemImage).tag(DisplayMode.list)
                         }
-                        Toggle("Filters", systemImage: "line.3.horizontal.decrease", isOn: $isPresentingFilters)
+                        Button("Filters…", systemImage: "line.3.horizontal.decrease") {
+                            isPresentingFilters = true
+                        }
                         if selectedMode.isFiltered {
                             Button("Clear filter", systemImage: "xmark.circle") {
                                 modeApplier.apply(.all)
@@ -75,10 +81,6 @@ struct CatalogView: View {
                     .accessibilityHint("Changes the layout, opens the filters or clears the filter")
                 }
             }
-            .navigationDestination(item: $selectedManga) { manga in
-                MangaDetailView(manga: manga)
-                    .navigationTransition(.zoom(sourceID: manga.id, in: heroNamespace))
-            }
             .navigationSplitViewColumnWidth(min: 380, ideal: 520, max: 720)
             .task(id: selectedMode) {
                 await viewModel.loadInitial(mode: selectedMode)
@@ -87,15 +89,25 @@ struct CatalogView: View {
                 await viewModel.refresh()
             }
         } detail: {
-            ContentUnavailableView("Select a manga", systemImage: "book.closed")
+            // The detail column is the destination of the selection: in a regular width it is
+            // the second column, and collapsed the split view pushes it on its own.
+            if let selectedManga {
+                MangaDetailView(manga: selectedManga)
+                    .navigationTransition(.zoom(sourceID: selectedManga.id, in: heroNamespace))
+            } else {
+                ContentUnavailableView("Select a manga", systemImage: "book.closed")
+            }
         }
         .navigationSplitViewStyle(.balanced)
         // The split view changes identity with the mode: the content's query follows the mode
         // and the navigation bar comes back expanded over the new content, as it does after a
         // detail is popped. Replacing only the column content left the bar collapsed. The
-        // inspector sits outside that identity, so its presentation survives the change.
+        // sheet sits outside that identity, so its presentation survives the change.
         .id(selectedMode)
-        .inspector(isPresented: $isPresentingFilters) {
+        // A sheet, not an inspector: a form that is filled, applied and closed is a modal in
+        // every Apple app, and the inspector left its presentation out of sync with the control
+        // that opens it when it was dismissed by dragging.
+        .sheet(isPresented: $isPresentingFilters) {
             CatalogFiltersView(mode: selectedMode, viewModel: viewModel)
         }
         .environment(\.applyCatalogMode, modeApplier)

@@ -558,16 +558,13 @@ extension SharedMockSuites {
         @Test func `applyAdvancedSearch posts the normalized draft paginated and indexes the results under the search key`() async throws {
             CatalogMockScenario.set(.customSearch, .fixture("search_custom.json"))
             let resultPage = try JSONDecoder.app.decode(MangaPageDTO.self, from: TestFixtures.data("search_custom.json"))
-            let draft = CustomSearch(
-                searchTitle: "dragon",
-                searchAuthorFirstName: "",
-                searchAuthorLastName: nil,
-                searchGenres: ["Action", "Adventure"],
-                searchThemes: [],
-                searchDemographics: nil,
-                searchContains: true
-            )
-            viewModel.searchDraft = draft
+            viewModel.draftTitle = "dragon"
+            for genre in ["Adventure", "Action"] {
+                viewModel.draftGenres.insert(genre)
+            }
+            viewModel.draftContains = true
+            // The author fields and the other two sets are left as the form opens them.
+            let draft = viewModel.searchDraft
 
             await viewModel.applyAdvancedSearch()
 
@@ -642,21 +639,129 @@ extension SharedMockSuites {
             #expect(CustomSearch.empty.normalized == .empty)
         }
 
-        @Test func `resetDraft returns the draft to empty after it was filled`() {
-            viewModel.searchDraft = CustomSearch(
+        // MARK: - The advanced search form
+
+        /// Every list is read back in the order the server sent it, never in the order the chips
+        /// were tapped. The themes and the demographics picked here come back in an order that is
+        /// not the alphabetical one either, so no accidental ordering can satisfy the test.
+        @Test func `The draft lists the picked categories in the order the server sent them`() async {
+            CatalogMockScenario.set([
+                .listGenres: .fixture("genres.json"),
+                .listThemes: .fixture("themes.json"),
+                .listDemographics: .fixture("demographics.json"),
+            ])
+            await viewModel.loadTaxonomies()
+
+            for genre in ["Adventure", "Action"] {
+                viewModel.draftGenres.insert(genre)
+            }
+            for theme in ["Historical", "Psychological", "Gore", "Samurai"] {
+                viewModel.draftThemes.insert(theme)
+            }
+            for demographic in ["Kids", "Josei", "Shounen"] {
+                viewModel.draftDemographics.insert(demographic)
+            }
+
+            let draft = viewModel.searchDraft
+
+            #expect(draft.searchGenres == ["Action", "Adventure"])
+            #expect(draft.searchThemes == ["Gore", "Psychological", "Historical", "Samurai"])
+            #expect(draft.searchDemographics == ["Shounen", "Josei", "Kids"])
+        }
+
+        /// The key indexes the stored results, so the same criteria must always produce the same
+        /// one: twice in a row, and whichever order the chips were tapped in.
+        @Test func `The search key of a draft does not depend on the order the categories were picked`() async {
+            CatalogMockScenario.set([
+                .listGenres: .fixture("genres.json"),
+                .listThemes: .fixture("themes.json"),
+                .listDemographics: .fixture("demographics.json"),
+            ])
+            await viewModel.loadTaxonomies()
+            viewModel.draftTitle = "dragon"
+            viewModel.draftContains = true
+            for genre in ["Supernatural", "Action", "Romance", "Mystery", "Comedy"] {
+                viewModel.draftGenres.insert(genre)
+            }
+
+            let key = CatalogMode.search(viewModel.searchDraft.normalized).modeKey
+
+            #expect(CatalogMode.search(viewModel.searchDraft.normalized).modeKey == key)
+
+            viewModel.draftGenres = []
+            for genre in ["Comedy", "Mystery", "Romance", "Action", "Supernatural"] {
+                viewModel.draftGenres.insert(genre)
+            }
+
+            #expect(CatalogMode.search(viewModel.searchDraft.normalized).modeKey == key)
+            // Same criteria spelled in the order of the server list: the key of those results.
+            let serverOrdered = CustomSearch(
                 searchTitle: "dragon",
-                searchAuthorFirstName: "Akira",
-                searchAuthorLastName: "Toriyama",
-                searchGenres: ["Action"],
-                searchThemes: ["Martial Arts"],
-                searchDemographics: ["Shounen"],
+                searchAuthorFirstName: nil,
+                searchAuthorLastName: nil,
+                searchGenres: ["Action", "Supernatural", "Mystery", "Comedy", "Romance"],
+                searchThemes: nil,
+                searchDemographics: nil,
                 searchContains: true
             )
-            #expect(viewModel.searchDraft != .empty)
+            #expect(CatalogMode.search(serverOrdered).modeKey == key)
+        }
+
+        /// The form is usable before the lists arrive (or when they failed): the picks are then
+        /// sorted alphabetically, which for these values is not the order they were picked in.
+        @Test func `Without the server lists the draft falls back to alphabetical order`() {
+            #expect(viewModel.taxonomies == nil)
+
+            for genre in ["Supernatural", "Mystery", "Action"] {
+                viewModel.draftGenres.insert(genre)
+            }
+            for theme in ["Psychological", "Historical", "Gore", "Samurai"] {
+                viewModel.draftThemes.insert(theme)
+            }
+            for demographic in ["Shounen", "Josei"] {
+                viewModel.draftDemographics.insert(demographic)
+            }
+
+            let draft = viewModel.searchDraft
+
+            #expect(draft.searchGenres == ["Action", "Mystery", "Supernatural"])
+            #expect(draft.searchThemes == ["Gore", "Historical", "Psychological", "Samurai"])
+            #expect(draft.searchDemographics == ["Josei", "Shounen"])
+        }
+
+        @Test(arguments: [true, false])
+        func `A blank field or an untouched list is left out of the search, and the contains toggle travels as it is`(
+            contains: Bool
+        ) {
+            viewModel.draftTitle = "  "
+            viewModel.draftAuthorLastName = "Toriyama"
+            viewModel.draftContains = contains
+
+            let search = viewModel.searchDraft.normalized
+
+            #expect(search.searchTitle == nil)
+            #expect(search.searchAuthorFirstName == nil)
+            #expect(search.searchAuthorLastName == "Toriyama")
+            #expect(search.searchGenres == nil)
+            #expect(search.searchThemes == nil)
+            #expect(search.searchDemographics == nil)
+            #expect(search.searchContains == contains)
+        }
+
+        @Test func `resetDraft returns the draft to empty after it was filled`() {
+            viewModel.draftTitle = "dragon"
+            viewModel.draftAuthorFirstName = "Akira"
+            viewModel.draftAuthorLastName = "Toriyama"
+            viewModel.draftGenres = ["Action"]
+            viewModel.draftThemes = ["Martial Arts"]
+            viewModel.draftDemographics = ["Shounen"]
+            viewModel.draftContains = true
+            #expect(viewModel.searchDraft.normalized != .empty)
 
             viewModel.resetDraft()
 
-            #expect(viewModel.searchDraft == .empty)
+            // A search from here would carry no criteria at all.
+            #expect(viewModel.searchDraft.normalized == .empty)
         }
 
         // MARK: - Clear filter
