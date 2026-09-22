@@ -19,6 +19,8 @@ extension SharedMockSuites {
     @MainActor
     struct CatalogViewModelSearchTests {
         private let viewModel: CatalogViewModel
+        /// The service behind `viewModel`, for tests that open a second screen on the same session.
+        private let service: MangaSyncService
         private let container: ModelContainer
         /// Page 1 of `/list/mangas`, reused as the answer of every paginated filter route.
         private let allPage: MangaPageDTO
@@ -27,7 +29,12 @@ extension SharedMockSuites {
             CatalogMockScenario.reset()
             let made = try PersistenceTestSupport.makeActor()
             container = made.container
-            let service = MangaSyncService(syncActor: made.actor, mangaRepository: DefaultMangaRepositoryTest())
+            let repository = DefaultMangaRepositoryTest()
+            service = MangaSyncService(
+                syncActor: made.actor,
+                mangaRepository: repository,
+                taxonomyCache: TaxonomyCacheActor(mangaRepository: repository)
+            )
             viewModel = CatalogViewModel(syncService: service)
             allPage = try JSONDecoder.app.decode(MangaPageDTO.self, from: TestFixtures.data("mangas_page.json"))
         }
@@ -106,6 +113,63 @@ extension SharedMockSuites {
             #expect(complete.themes.count == 52)
             #expect(complete.genres.count == 21)
             #expect(viewModel.taxonomyError == nil)
+        }
+
+        @Test func `Two view models on the same service fetch each list once between them`() async throws {
+            CatalogMockScenario.set([
+                .listGenres: .fixture("genres.json"),
+                .listThemes: .fixture("themes.json"),
+                .listDemographics: .fixture("demographics.json"),
+            ])
+            let secondScreen = CatalogViewModel(syncService: service)
+
+            await viewModel.loadTaxonomies()
+            await secondScreen.loadTaxonomies()
+
+            #expect(CatalogMockScenario.hits(.listGenres) == 1)
+            #expect(CatalogMockScenario.hits(.listThemes) == 1)
+            #expect(CatalogMockScenario.hits(.listDemographics) == 1)
+            let first = try #require(viewModel.taxonomies)
+            #expect(first.genres.count == 21)
+            #expect(first.themes.count == 52)
+            #expect(first.demographics.count == 5)
+            #expect(viewModel.taxonomyError == nil)
+            let second = try #require(secondScreen.taxonomies)
+            #expect(second.genres.count == 21)
+            #expect(second.themes.count == 52)
+            #expect(second.demographics.count == 5)
+            #expect(secondScreen.taxonomyError == nil)
+        }
+
+        @Test func `Cancelling the screen that started the load neither aborts it nor makes the next screen ask again`() async throws {
+            CatalogMockScenario.set([
+                .listGenres: .delayed(for: .milliseconds(200), then: .fixture("genres.json")),
+                .listThemes: .delayed(for: .milliseconds(200), then: .fixture("themes.json")),
+                .listDemographics: .delayed(for: .milliseconds(200), then: .fixture("demographics.json")),
+            ])
+            let viewModel = viewModel
+
+            let leaving = Task { await viewModel.loadTaxonomies() }
+            try await Task.sleep(for: .milliseconds(50))
+            leaving.cancel()
+            await leaving.value
+
+            // The load it started outlives the screen: the lists reach it in full.
+            let cancelledScreen = try #require(viewModel.taxonomies)
+            #expect(cancelledScreen.genres.count == 21)
+            #expect(cancelledScreen.themes.count == 52)
+            #expect(cancelledScreen.demographics.count == 5)
+            let nextScreen = CatalogViewModel(syncService: service)
+            await nextScreen.loadTaxonomies()
+
+            #expect(CatalogMockScenario.hits(.listGenres) == 1)
+            #expect(CatalogMockScenario.hits(.listThemes) == 1)
+            #expect(CatalogMockScenario.hits(.listDemographics) == 1)
+            let taxonomies = try #require(nextScreen.taxonomies)
+            #expect(taxonomies.genres.count == 21)
+            #expect(taxonomies.themes.count == 52)
+            #expect(taxonomies.demographics.count == 5)
+            #expect(nextScreen.taxonomyError == nil)
         }
 
         // MARK: - Category filters

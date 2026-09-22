@@ -111,8 +111,11 @@ final class CatalogViewModel {
     /// The page of the last request, successful or not; `retry()` asks for it again.
     @ObservationIgnored
     private var lastRequestedPage = 1
+    /// The mode whose first page this screen holds; `nil` while it has none, so that showing the
+    /// screen again asks for it. Only a first page changes it: a later page that fails leaves the
+    /// pages already indexed alone.
     @ObservationIgnored
-    private var taxonomyTask: Task<Void, Never>?
+    private var loadedMode: CatalogMode?
     /// The pending suggestions request, if any; awaiting it is how a caller learns it settled.
     @ObservationIgnored
     private(set) var suggestionsTask: Task<Void, Never>?
@@ -140,6 +143,25 @@ final class CatalogViewModel {
         await run(mode: mode, page: 1)
     }
 
+    /// Loads `mode` unless this screen already loaded it. Showing the screen again — coming back
+    /// to a tab — must not ask for page 1 again: storing it replaces the mode's index, so the
+    /// pages the reader had already scrolled through would vanish under them. Pull to refresh
+    /// still reloads on demand.
+    func loadInitialIfNeeded(mode: CatalogMode) async {
+        guard loadedMode != mode else {
+            // Back on a mode this screen holds while another one was still loading: that load
+            // belongs to a mode nobody shows any more, so it is dropped, and the state it would
+            // have settled — the mode and the spinner that gates paging — is settled here.
+            if currentMode != mode {
+                currentTask?.cancel()
+                currentMode = mode
+                isLoading = false
+            }
+            return
+        }
+        await loadInitial(mode: mode)
+    }
+
     /// Loads the page after `currentPage`. Does nothing while a load is in flight or when the
     /// last page was already short. A failed page keeps `hasNextPage`, so a retry asks for it again.
     func loadMore() async {
@@ -165,44 +187,13 @@ final class CatalogViewModel {
 
     // MARK: - Taxonomies
 
-    /// Loads the lists that are still missing, the three in parallel on the first call. A list
-    /// already loaded is never requested again, so a form can call this every time it opens;
-    /// after a partial failure the next call retries only the lists that failed. A call that
-    /// arrives while another is loading waits for it instead of requesting again.
+    /// Shows the session's lists, loading the ones still missing. The service requests each
+    /// list once for the whole app, so a form can call this every time it opens; after a
+    /// partial failure the next call retries only the lists that failed.
     func loadTaxonomies() async {
-        if let taxonomyTask {
-            await taxonomyTask.value
-            return
-        }
-        let current = taxonomies ?? .empty
-        guard current.genres.isEmpty || current.themes.isEmpty || current.demographics.isEmpty else {
-            return
-        }
-        let task = Task { await fetchMissingTaxonomies(from: current) }
-        taxonomyTask = task
-        await task.value
-        taxonomyTask = nil
-    }
-
-    private func fetchMissingTaxonomies(from current: TaxonomyCatalog) async {
-        let repository = syncService.mangaRepository
-        // The closures spell their error type: a bare `try` would be inferred as untyped.
-        async let genres = Self.list(current.genres) { () async throws(APIError) in
-            try await repository.fetchAllGenres()
-        }
-        async let themes = Self.list(current.themes) { () async throws(APIError) in
-            try await repository.fetchAllThemes()
-        }
-        async let demographics = Self.list(current.demographics) { () async throws(APIError) in
-            try await repository.fetchAllDemographics()
-        }
-        let loaded = await (genres, themes, demographics)
-        taxonomies = TaxonomyCatalog(
-            genres: Self.values(loaded.0),
-            themes: Self.values(loaded.1),
-            demographics: Self.values(loaded.2)
-        )
-        taxonomyError = [loaded.0, loaded.1, loaded.2].compactMap(Self.failure).first
+        let result = await syncService.loadTaxonomies()
+        taxonomies = result.catalog
+        taxonomyError = result.error
     }
 
     // MARK: - Search
@@ -380,35 +371,18 @@ final class CatalogViewModel {
             hasNextPage = result.received == perPage
             totalCount = result.total
             totalPages = (result.total + perPage - 1) / perPage
+            if page == 1 {
+                loadedMode = mode
+            }
         } catch {
             guard !Task.isCancelled else {
                 return
             }
+            if page == 1 {
+                loadedMode = nil
+            }
             loadError = error
         }
         isLoading = false
-    }
-
-    /// Keeps `existing` when it has content; otherwise runs `fetch` and captures its outcome.
-    private nonisolated static func list(
-        _ existing: [String],
-        fetch: () async throws(APIError) -> [String]
-    ) async -> Result<[String], APIError> {
-        guard existing.isEmpty else {
-            return .success(existing)
-        }
-        do throws(APIError) {
-            return try .success(await fetch())
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    private static func values(_ result: Result<[String], APIError>) -> [String] {
-        if case let .success(values) = result { values } else { [] }
-    }
-
-    private static func failure(_ result: Result<[String], APIError>) -> APIError? {
-        if case let .failure(error) = result { error } else { nil }
     }
 }

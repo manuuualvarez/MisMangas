@@ -8,10 +8,13 @@
 import Foundation
 
 /// The one place where the network repository meets the store: pulls a catalog page and hands
-/// it to `MangaSyncActor`. Views then read the result through their queries.
+/// it to `MangaSyncActor`. Views then read the result through their queries. It also serves the
+/// session's classification lists, which every screen shares through `taxonomyCache`.
 struct MangaSyncService {
     let syncActor: MangaSyncActor
     let mangaRepository: any MangaRepository
+    /// The classification lists, loaded once per session for every screen built on this service.
+    let taxonomyCache: TaxonomyCacheActor
 
     /// Retention of index rows and unreferenced detail records.
     static let retentionWindow: TimeInterval = 7 * 24 * 60 * 60
@@ -54,6 +57,12 @@ struct MangaSyncService {
             throw .unknown
         }
         return (received: pageDTO.items.count, total: pageDTO.metadata.total)
+    }
+
+    /// The genre, theme and demographic lists of the session, each requested once for every
+    /// screen built on this service, and the error of the first list that failed, if any.
+    func loadTaxonomies() async -> (catalog: TaxonomyCatalog, error: APIError?) {
+        await taxonomyCache.load()
     }
 
     /// Start-up maintenance: purges the index first, then the detail records nothing references

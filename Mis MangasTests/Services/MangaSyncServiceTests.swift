@@ -29,7 +29,12 @@ extension SharedMockSuites {
             let made = try PersistenceTestSupport.makeActor()
             actor = made.actor
             container = made.container
-            service = MangaSyncService(syncActor: actor, mangaRepository: DefaultMangaRepositoryTest())
+            let repository = DefaultMangaRepositoryTest()
+            service = MangaSyncService(
+                syncActor: actor,
+                mangaRepository: repository,
+                taxonomyCache: TaxonomyCacheActor(mangaRepository: repository)
+            )
         }
 
         // MARK: - loadCatalogPage
@@ -116,7 +121,12 @@ extension SharedMockSuites {
         }
 
         @Test func `A page that arrives after the task was cancelled surfaces cancelled and leaves the store empty`() async throws {
-            let cancellingService = MangaSyncService(syncActor: actor, mangaRepository: CancellingMangaRepository())
+            let repository = CancellingMangaRepository()
+            let cancellingService = MangaSyncService(
+                syncActor: actor,
+                mangaRepository: repository,
+                taxonomyCache: TaxonomyCacheActor(mangaRepository: repository)
+            )
 
             // A child task, so the fake cancels the load and not the test itself.
             let load = Task {

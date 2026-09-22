@@ -25,7 +25,11 @@ final class AppDependencies {
         self.container = container
         self.mangaRepository = mangaRepository
         syncActor = MangaSyncActor(modelContainer: container)
-        syncService = MangaSyncService(syncActor: syncActor, mangaRepository: mangaRepository)
+        syncService = MangaSyncService(
+            syncActor: syncActor,
+            mangaRepository: mangaRepository,
+            taxonomyCache: TaxonomyCacheActor(mangaRepository: mangaRepository)
+        )
     }
 
     /// The real store in the App Group container and the real backend.

@@ -82,8 +82,9 @@ struct CatalogView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 380, ideal: 520, max: 720)
+            // The view model decides whether this mode still needs loading.
             .task(id: selectedMode) {
-                await viewModel.loadInitial(mode: selectedMode)
+                await viewModel.loadInitialIfNeeded(mode: selectedMode)
             }
             .refreshable {
                 await viewModel.refresh()
@@ -114,12 +115,17 @@ struct CatalogView: View {
         // Outside the identity change, or a fresh split view would never see the mode change.
         // A chip in the detail column changes the catalog's title while focus is elsewhere.
         .onChange(of: selectedMode) { _, mode in
+            // The All / Best picker writes the mode straight into the selection, so closing the
+            // detail belongs here: whoever changes the mode, the open manga is no longer in the
+            // list behind it.
+            selectedManga = nil
             AccessibilityNotification.Announcement(String(localized: "Showing \(mode.title)")).post()
         }
     }
 
-    /// Every way of changing the mode goes through here: the filter form, the chips of a detail
-    /// and the menu. A mode change always closes the detail.
+    /// How the filter form, the chips of a detail and the menu apply a mode here. Closing the
+    /// detail belongs to the change of mode, above; this one also closes it when the mode applied
+    /// is the one already shown, which changes nothing and would leave the manga on screen.
     private var modeApplier: SelectedModeApplier {
         SelectedModeApplier(mode: $selectedMode, selectedManga: $selectedManga)
     }
