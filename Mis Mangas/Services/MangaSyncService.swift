@@ -72,6 +72,46 @@ struct MangaSyncService {
         await taxonomyCache.load()
     }
 
+    // MARK: - Detail and collection
+
+    /// Stores a manga that arrived outside any catalog page (a deep link, a refreshed detail)
+    /// and returns its id.
+    @discardableResult
+    func cacheDetail(_ dto: MangaDTO) async throws(PersistenceError) -> Int {
+        try await syncActor.cacheDetail(dto)
+    }
+
+    /// Asks the server for the full record of `mangaID` and stores it. Store failures surface as
+    /// `APIError.unknown`.
+    func refreshDetail(mangaID: Int) async throws(APIError) {
+        let dto = try await mangaRepository.fetchManga(id: mangaID)
+        do {
+            try await cacheDetail(dto)
+        } catch {
+            throw .unknown
+        }
+    }
+
+    /// Saves the entry locally and queues its upload; the actor does both in one transaction.
+    func saveCollectionEntry(
+        mangaID: Int,
+        volumesOwned: [Int],
+        readingVolume: Int?,
+        completeCollection: Bool
+    ) async throws(PersistenceError) {
+        try await syncActor.saveCollectionEntry(
+            mangaID: mangaID,
+            volumesOwned: volumesOwned,
+            readingVolume: readingVolume,
+            completeCollection: completeCollection
+        )
+    }
+
+    /// Removes the entry locally and queues its deletion; the actor does both in one transaction.
+    func removeCollectionEntry(mangaID: Int) async throws(PersistenceError) {
+        try await syncActor.removeCollectionEntry(mangaID: mangaID)
+    }
+
     /// Start-up maintenance: purges the index first, then the detail records nothing references
     /// any more. Never throws: a failed purge only postpones the cleanup.
     func bootstrap() async -> (catalog: Int, details: Int) {

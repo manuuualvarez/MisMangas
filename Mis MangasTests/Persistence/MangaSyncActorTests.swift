@@ -352,8 +352,8 @@ struct MangaSyncActorTests {
         try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1, now: Self.eightDaysAgo)
         _ = try await actor.purgeExpiredCatalog(olderThan: Self.sevenDays)
 
-        // Test-only write outside the actor: the collection API does not exist yet, and the
-        // purge must honor the flag regardless of who set it.
+        // Test-only write outside the actor: the purge must honor the flag regardless of who
+        // set it, so the flag is set directly rather than through a collection save.
         let keptID = 4
         let setup = PersistenceTestSupport.freshContext(container)
         let kept = try #require(try PersistenceTestSupport.manga(id: keptID, in: setup))

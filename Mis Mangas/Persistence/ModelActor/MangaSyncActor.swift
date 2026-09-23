@@ -9,7 +9,9 @@ import Foundation
 import SwiftData
 
 /// The single write point of the store. Every method is one atomic change followed by an
-/// explicit `save()`; autosave stays off everywhere else.
+/// explicit `save()`; autosave stays off everywhere else. A decision that spans more than one
+/// read or write lives here, as one synchronous method: callers never chain two actor calls
+/// whose combination must stay consistent.
 @ModelActor
 actor MangaSyncActor {
 
@@ -83,6 +85,178 @@ actor MangaSyncActor {
             return stale.count
         }
     }
+
+    // MARK: - Detail cache
+
+    /// Stores one manga as `/search/manga/{id}` serves it, with its authors, stamped with `now`.
+    /// Leaves the collection and the catalog index untouched. Returns the manga id.
+    func cacheDetail(_ dto: MangaDTO, now: Date = .now) throws(PersistenceError) -> Int {
+        try run {
+            _ = try upsertManga(dto, now: now)
+            try save()
+            return dto.id
+        }
+    }
+
+    // MARK: - Collection
+
+    /// Saves the entry of a stored manga and queues its upload, in one transaction: the entry
+    /// and the pending operation are always written together. Throws `.notFound` when the
+    /// manga is not stored: an entry always hangs from its manga.
+    func saveCollectionEntry(
+        mangaID: Int,
+        volumesOwned: [Int],
+        readingVolume: Int?,
+        completeCollection: Bool,
+        now: Date = .now
+    ) throws(PersistenceError) {
+        let isStored = try run {
+            guard let manga = try fetchOne(#Predicate<Manga> { $0.id == mangaID }) else {
+                return false
+            }
+            let entry = try applyEntry(
+                to: manga,
+                volumesOwned: volumesOwned,
+                readingVolume: readingVolume,
+                completeCollection: completeCollection,
+                now: now
+            )
+            let payload = try JSONEncoder.app.encode(entry.toRequest())
+            try replacePendingOperation(.upsert, mangaID: mangaID, payload: payload, now: now)
+            try save()
+            return true
+        }
+        guard isStored else {
+            throw .notFound
+        }
+    }
+
+    /// Removes the entry of `mangaID`, takes the manga out of the collection and queues the
+    /// deletion, in one transaction. The manga stays cached. The deletion is queued even
+    /// without a local entry: the server may still hold one.
+    func removeCollectionEntry(mangaID: Int, now: Date = .now) throws(PersistenceError) {
+        try run {
+            if let entry = try fetchOne(#Predicate<UserCollectionEntry> { $0.mangaID == mangaID }) {
+                modelContext.delete(entry)
+            }
+            if let manga = try fetchOne(#Predicate<Manga> { $0.id == mangaID }), manga.inCollection {
+                manga.inCollection = false
+                manga.updatedAt = now
+            }
+            try replacePendingOperation(.delete, mangaID: mangaID, payload: nil, now: now)
+            try save()
+        }
+    }
+
+    /// Stores an entry as the server returns it: the nested manga as `cacheDetail` would, then
+    /// the entry under the same rules as a local save (local id, normalized volumes). This is the
+    /// server's truth, so it bypasses the outbox: never call it for a manga with a queued
+    /// operation, or the queue would stop matching the entry. Previews use it to seed the store.
+    func upsertCollectionEntry(from dto: UserMangaCollectionDTO, now: Date = .now) throws(PersistenceError) {
+        try run {
+            let manga = try upsertManga(dto.manga, now: now)
+            try applyEntry(
+                to: manga,
+                volumesOwned: dto.volumesOwned,
+                readingVolume: dto.readingVolume,
+                completeCollection: dto.completeCollection,
+                now: now
+            )
+            try save()
+        }
+    }
+
+    /// Every entry of the collection, in no particular order.
+    func collectionSnapshot() throws(PersistenceError) -> [CollectionEntrySnapshot] {
+        try run {
+            try modelContext.fetch(FetchDescriptor<UserCollectionEntry>()).map { entry in
+                CollectionEntrySnapshot(
+                    mangaID: entry.mangaID,
+                    volumesOwned: entry.volumesOwned,
+                    readingVolume: entry.readingVolume,
+                    completeCollection: entry.completeCollection,
+                    updatedAt: entry.updatedAt
+                )
+            }
+        }
+    }
+
+    // MARK: - Outbox
+
+    /// The operations ready to send, oldest first; blocked ones wait for `unblockAll()`. The
+    /// operations stay stored until they are marked completed.
+    func drainPendingOperations() throws(PersistenceError) -> [PendingOperationSnapshot] {
+        try run {
+            let ready = FetchDescriptor<PendingOperation>(
+                predicate: #Predicate { $0.blockedAt == nil },
+                sortBy: [SortDescriptor(\.createdAt)]
+            )
+            return try modelContext.fetch(ready).compactMap { operation in
+                guard let type = PendingOperationType(rawValue: operation.operationType) else {
+                    return nil
+                }
+                return PendingOperationSnapshot(
+                    id: operation.id,
+                    type: type,
+                    mangaID: operation.mangaID,
+                    payload: operation.payload,
+                    attempts: operation.attempts
+                )
+            }
+        }
+    }
+
+    /// Deletes a sent operation. An id that is gone (the operation was replaced while it was in
+    /// flight) is ignored, so the replacement stays queued.
+    func markOperationCompleted(id: UUID) throws(PersistenceError) {
+        try run {
+            guard let operation = try fetchOne(#Predicate<PendingOperation> { $0.id == id }) else {
+                return
+            }
+            modelContext.delete(operation)
+            try save()
+        }
+    }
+
+    /// Records a failed send and blocks the operation once it reaches `maxAttempts`. Returns
+    /// whether it is blocked now; an id that is gone is ignored and reports `false`.
+    func markOperationFailed(id: UUID, error: String, maxAttempts: Int = 3, now: Date = .now) throws(PersistenceError) -> Bool {
+        try run {
+            guard let operation = try fetchOne(#Predicate<PendingOperation> { $0.id == id }) else {
+                return false
+            }
+            operation.attempts += 1
+            operation.lastError = error
+            if operation.attempts >= maxAttempts {
+                operation.blockedAt = now
+            }
+            try save()
+            return operation.blockedAt != nil
+        }
+    }
+
+    /// Gives every blocked operation a fresh start: back in the drain with no attempts or error.
+    func unblockAll() throws(PersistenceError) {
+        try run {
+            let blocked = try modelContext.fetch(
+                FetchDescriptor<PendingOperation>(predicate: #Predicate { $0.blockedAt != nil })
+            )
+            for operation in blocked {
+                operation.blockedAt = nil
+                operation.attempts = 0
+                operation.lastError = nil
+            }
+            try save()
+        }
+    }
+
+    /// Every manga with a queued operation, blocked ones included: a local intention that has not
+    /// reached the server must not be overwritten by it.
+    func pendingMangaIDs() throws(PersistenceError) -> Set<Int> {
+        try run {
+            Set(try modelContext.fetch(FetchDescriptor<PendingOperation>()).map(\.mangaID))
+        }
+    }
 }
 
 // MARK: - Helpers
@@ -143,5 +317,75 @@ private extension MangaSyncActor {
             manga.updatedAt = now
         }
         return mangas
+    }
+
+    /// The first model matching `predicate`, fetching one row at most.
+    func fetchOne<T: PersistentModel>(_ predicate: Predicate<T>) throws -> T? {
+        var descriptor = FetchDescriptor<T>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
+
+    /// Upserts one manga and its authors, stamped with `now`, and returns the stored manga.
+    func upsertManga(_ dto: MangaDTO, now: Date) throws -> Manga {
+        let authors = try upsertAuthors(dto.authors)
+        guard let manga = try upsertMangas([dto], authors: authors, now: now)[dto.id] else {
+            preconditionFailure("upsertMangas returns every manga it is given")
+        }
+        return manga
+    }
+
+    /// Creates or updates the entry of `manga`, looked up by manga id so a manga never gets two,
+    /// and puts the manga in the collection. Volumes are stored ascending and without duplicates.
+    /// `updatedAt` moves only when the user fields change, so a snapshot that repeats what is
+    /// stored never looks like a fresh edit.
+    @discardableResult
+    func applyEntry(
+        to manga: Manga,
+        volumesOwned: [Int],
+        readingVolume: Int?,
+        completeCollection: Bool,
+        now: Date
+    ) throws -> UserCollectionEntry {
+        let mangaID = manga.id
+        let volumes = Set(volumesOwned).sorted()
+        let entry: UserCollectionEntry
+        if let existing = try fetchOne(#Predicate<UserCollectionEntry> { $0.mangaID == mangaID }) {
+            entry = existing
+        } else {
+            entry = UserCollectionEntry(mangaID: mangaID, createdAt: now, updatedAt: now)
+            modelContext.insert(entry)
+        }
+        let isChanged = entry.volumesOwned != volumes
+            || entry.readingVolume != readingVolume
+            || entry.completeCollection != completeCollection
+            || !manga.inCollection
+        if isChanged {
+            entry.volumesOwned = volumes
+            entry.readingVolume = readingVolume
+            entry.completeCollection = completeCollection
+            entry.updatedAt = now
+            manga.updatedAt = now
+        }
+        entry.manga = manga
+        manga.inCollection = true
+        return entry
+    }
+
+    /// Queues a write for the server. At most one operation per manga: the new one replaces any
+    /// earlier one, since only the last intention matters, and goes to the back of the queue.
+    func replacePendingOperation(
+        _ type: PendingOperationType,
+        mangaID: Int,
+        payload: Data?,
+        now: Date
+    ) throws {
+        let previous = try modelContext.fetch(
+            FetchDescriptor<PendingOperation>(predicate: #Predicate { $0.mangaID == mangaID })
+        )
+        for operation in previous {
+            modelContext.delete(operation)
+        }
+        modelContext.insert(PendingOperation(operationType: type, mangaID: mangaID, payload: payload, createdAt: now))
     }
 }
