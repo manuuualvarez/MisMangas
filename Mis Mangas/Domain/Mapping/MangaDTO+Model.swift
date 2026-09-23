@@ -15,8 +15,8 @@ extension MangaDTO {
         return manga
     }
 
-    /// Copies the server fields onto an existing manga. Leaves `cachedAt`, `inCollection`,
-    /// `updatedAt` and the relationships untouched.
+    /// Copies the server fields onto an existing manga, including the order of its authors. Leaves
+    /// `cachedAt`, `inCollection`, `updatedAt` and the relationships untouched.
     func apply(to manga: Manga) {
         manga.title = title
         manga.titleEnglish = titleEnglish
@@ -34,5 +34,6 @@ extension MangaDTO {
         manga.genres = genres.map(\.genre)
         manga.themes = themes.map(\.theme)
         manga.demographics = demographics.map(\.demographic)
+        manga.authorOrder = authors.map(\.id)
     }
 }

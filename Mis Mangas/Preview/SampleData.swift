@@ -13,13 +13,37 @@ import Foundation
 enum SampleData {
     static let mangas: [MangaDTO] = Builder().mangas
 
-    /// The page the backend would send for `mode`: "all" in sample order, "best" by score.
-    /// `total` is the sample size, so a page of 20 is also the last one.
+    /// The taxonomy lists as `/list/*` would serve them for this sample: every name that appears,
+    /// once, in order of first appearance.
+    static let genres: [String] = uniqueInOrder(mangas.flatMap { $0.genres.map(\.genre) })
+    static let themes: [String] = uniqueInOrder(mangas.flatMap { $0.themes.map(\.theme) })
+    static let demographics: [String] = uniqueInOrder(mangas.flatMap { $0.demographics.map(\.demographic) })
+
+    /// The page the backend would send for `mode`: "all" in sample order, "best" by score, every
+    /// filter and search over the sample with the server's matching rules (case-insensitive;
+    /// exact names for categories). `total` is the size of the result, so a page of 20 is also
+    /// the last one.
     static func page(for mode: CatalogMode, page: Int, per: Int) -> MangaPageDTO {
         let ordered: [MangaDTO]
         switch mode {
-        case .all: ordered = mangas
-        case .best: ordered = mangas.sorted { $0.score > $1.score }
+        case .all:
+            ordered = mangas
+        case .best:
+            ordered = mangas.sorted { $0.score > $1.score }
+        case .byGenre(let genre):
+            ordered = mangas.filter { $0.genres.contains { sameName($0.genre, genre) } }
+        case .byTheme(let theme):
+            ordered = mangas.filter { $0.themes.contains { sameName($0.theme, theme) } }
+        case .byDemographic(let demographic):
+            ordered = mangas.filter { $0.demographics.contains { sameName($0.demographic, demographic) } }
+        case .byAuthor(let id, _):
+            ordered = mangas.filter { $0.authors.contains { $0.id == id } }
+        case .titleContains(let query):
+            ordered = mangas.filter { matches($0.title, query, contains: true) }
+        case .beginsWith(let query):
+            ordered = mangas.filter { matches($0.title, query, contains: false) }
+        case .search(let search):
+            ordered = mangas.filter { matches($0, search) }
         }
         let start = min(max(page - 1, 0) * per, ordered.count)
         let end = min(start + per, ordered.count)
@@ -27,6 +51,60 @@ enum SampleData {
             metadata: PageMetadataDTO(total: ordered.count, page: page, per: per),
             items: Array(ordered[start ..< end])
         )
+    }
+
+    /// `/search/author/{text}`: the sample's authors whose first or last name contains `text`.
+    static func authors(matching text: String) -> [AuthorDTO] {
+        var seen: Set<UUID> = []
+        return mangas.flatMap(\.authors).filter { author in
+            guard author.firstName.localizedCaseInsensitiveContains(text)
+                || author.lastName.localizedCaseInsensitiveContains(text) else {
+                return false
+            }
+            return seen.insert(author.id).inserted
+        }
+    }
+
+    // MARK: - Matching
+
+    private static func uniqueInOrder(_ names: [String]) -> [String] {
+        var seen: Set<String> = []
+        return names.filter { seen.insert($0).inserted }
+    }
+
+    private static func sameName(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.compare(rhs, options: .caseInsensitive) == .orderedSame
+    }
+
+    /// `nil` or blank criteria match everything; `contains` picks CONTAINS over BEGINS WITH.
+    private static func matches(_ text: String, _ query: String?, contains: Bool) -> Bool {
+        guard let query, !query.isEmpty else {
+            return true
+        }
+        return contains
+            ? text.localizedCaseInsensitiveContains(query)
+            : text.lowercased().hasPrefix(query.lowercased())
+    }
+
+    /// AND of every present field of a `CustomSearch`; a manga must carry every listed category.
+    private static func matches(_ manga: MangaDTO, _ search: CustomSearch) -> Bool {
+        let contains = search.searchContains
+        guard matches(manga.title, search.searchTitle, contains: contains) else {
+            return false
+        }
+        let authorMatches = manga.authors.contains {
+            matches($0.firstName, search.searchAuthorFirstName, contains: contains)
+                && matches($0.lastName, search.searchAuthorLastName, contains: contains)
+        }
+        guard authorMatches || (search.searchAuthorFirstName == nil && search.searchAuthorLastName == nil) else {
+            return false
+        }
+        let genres = manga.genres.map(\.genre)
+        let themes = manga.themes.map(\.theme)
+        let demographics = manga.demographics.map(\.demographic)
+        return (search.searchGenres ?? []).allSatisfy { wanted in genres.contains { sameName($0, wanted) } }
+            && (search.searchThemes ?? []).allSatisfy { wanted in themes.contains { sameName($0, wanted) } }
+            && (search.searchDemographics ?? []).allSatisfy { wanted in demographics.contains { sameName($0, wanted) } }
     }
 
     private struct Builder {

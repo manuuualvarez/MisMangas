@@ -77,9 +77,9 @@ enum PersistenceTestSupport {
 }
 
 extension MangaDTO {
-    /// A copy with some fields replaced. Used to derive "the same manga, refreshed" (new score)
-    /// and "a second page of unseen mangas" (shifted ids) from the real fixtures.
-    func replacing(id: Int? = nil, score: Double? = nil) -> MangaDTO {
+    /// A copy with some fields replaced. Used to derive "the same manga, refreshed" (new score or
+    /// reordered authors) and "a second page of unseen mangas" (shifted ids) from the real fixtures.
+    func replacing(id: Int? = nil, score: Double? = nil, authors: [AuthorDTO]? = nil) -> MangaDTO {
         MangaDTO(
             id: id ?? self.id,
             title: title,
@@ -95,7 +95,7 @@ extension MangaDTO {
             volumes: volumes,
             mainPicture: mainPicture,
             url: url,
-            authors: authors,
+            authors: authors ?? self.authors,
             genres: genres,
             themes: themes,
             demographics: demographics

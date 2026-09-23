@@ -73,6 +73,42 @@ struct MangaSyncActorTests {
         #expect(monster.status == "finished")
     }
 
+    // MARK: - Author order
+
+    /// Author ids of Berserk (id 2) as `mangas_page.json` lists them: Kentarou Miura, then
+    /// Studio Gaga.
+    private static let berserkID = 2
+    private static let miuraID = "6F0B6948-08C4-4761-8BE1-192E68AB0A2F"
+    private static let studioGagaID = "0304C4E9-2D89-463A-8FDD-EEAB5B9D57B3"
+
+    @Test func `Upsert keeps the server order of a manga's authors`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let berserk = try #require(try PersistenceTestSupport.manga(id: Self.berserkID, in: context))
+        #expect(berserk.authorOrder.map(\.uuidString) == [Self.miuraID, Self.studioGagaID])
+        #expect(berserk.orderedAuthors.map(\.id.uuidString) == [Self.miuraID, Self.studioGagaID])
+        #expect(berserk.primaryAuthorName == "Kentarou Miura")
+    }
+
+    @Test func `Refreshing a manga whose authors the server reordered stores the new order`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        let reordered = allPage1.map { dto in
+            dto.id == Self.berserkID ? dto.replacing(authors: Array(dto.authors.reversed())) : dto
+        }
+
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: reordered)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let berserk = try #require(try PersistenceTestSupport.manga(id: Self.berserkID, in: context))
+        #expect(berserk.authorOrder.map(\.uuidString) == [Self.studioGagaID, Self.miuraID])
+        #expect(berserk.orderedAuthors.map(\.id.uuidString) == [Self.studioGagaID, Self.miuraID])
+        #expect(berserk.primaryAuthorName == "Studio Gaga")
+    }
+
     @Test func `Upsert stamps cachedAt with the date it is given`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
 
@@ -177,6 +213,68 @@ struct MangaSyncActorTests {
         let berserk = try #require(try PersistenceTestSupport.manga(id: berserkID, in: context))
         #expect(berserk.catalogEntries.map(\.modeKey).sorted() == ["all", "best"])
         #expect(try PersistenceTestSupport.mangasByID(in: context).filter { $0.id == berserkID }.count == 1)
+    }
+
+    // MARK: - Indexed count
+
+    @Test func `indexedCount reports the 20 entries of page 1 and the 40 of page 2`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+        let afterPage1 = try await actor.indexedCount(modeKey: "all")
+        try await actor.replaceCatalogPage(modeKey: "all", page: 2, per: 20, dtos: allPage2)
+        let afterPage2 = try await actor.indexedCount(modeKey: "all")
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let stored = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).count
+        #expect(afterPage1 == allPage1.count)
+        #expect(afterPage2 == allPage1.count + allPage2.count)
+        #expect(afterPage2 == stored)
+    }
+
+    @Test func `indexedCount of a mode that was never indexed is zero`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+
+        let best = try await actor.indexedCount(modeKey: "best")
+
+        let context = PersistenceTestSupport.freshContext(container)
+        #expect(try PersistenceTestSupport.catalogEntries(modeKey: "best", in: context).isEmpty)
+        #expect(best == 0)
+    }
+
+    @Test func `Reindexing page 1 takes the count of the mode back to 20`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+        try await actor.replaceCatalogPage(modeKey: "all", page: 2, per: 20, dtos: allPage2)
+
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+
+        let count = try await actor.indexedCount(modeKey: "all")
+        let context = PersistenceTestSupport.freshContext(container)
+        let stored = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).count
+        #expect(count == allPage1.count)
+        #expect(count == stored)
+    }
+
+    @Test func `Indexing a second mode leaves the count of the first one untouched`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+        try await actor.replaceCatalogPage(modeKey: "all", page: 2, per: 20, dtos: allPage2)
+
+        try await actor.replaceCatalogPage(modeKey: "best", page: 1, per: 20, dtos: bestPage1)
+
+        let all = try await actor.indexedCount(modeKey: "all")
+        let best = try await actor.indexedCount(modeKey: "best")
+        let context = PersistenceTestSupport.freshContext(container)
+        let storedAll = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).count
+        let storedBest = try PersistenceTestSupport.catalogEntries(modeKey: "best", in: context).count
+        // The two modes share mangas, so a count of stored mangas would not add up to these two.
+        #expect(!sharedIDs.isEmpty)
+        #expect(all == allPage1.count + allPage2.count)
+        #expect(best == bestPage1.count)
+        #expect(all == storedAll)
+        #expect(best == storedBest)
     }
 
     // MARK: - Catalog purge

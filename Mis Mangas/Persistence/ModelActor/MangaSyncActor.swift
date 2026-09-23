@@ -39,6 +39,14 @@ actor MangaSyncActor {
         }
     }
 
+    /// How many index rows `modeKey` holds right now. The index of a mode belongs to the whole
+    /// app, so a screen cannot tell from its own memory how much of it is still there.
+    func indexedCount(modeKey: String) throws(PersistenceError) -> Int {
+        try run {
+            try modelContext.fetchCount(FetchDescriptor<CatalogEntry>(predicate: #Predicate { $0.modeKey == modeKey }))
+        }
+    }
+
     // MARK: - Purges
 
     /// Deletes index rows fetched before `now - olderThan`. Returns how many were removed.

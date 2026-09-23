@@ -8,10 +8,13 @@
 import Foundation
 
 /// The one place where the network repository meets the store: pulls a catalog page and hands
-/// it to `MangaSyncActor`. Views then read the result through their queries.
+/// it to `MangaSyncActor`. Views then read the result through their queries. It also serves the
+/// session's classification lists, which every screen shares through `taxonomyCache`.
 struct MangaSyncService {
     let syncActor: MangaSyncActor
     let mangaRepository: any MangaRepository
+    /// The classification lists, loaded once per session for every screen built on this service.
+    let taxonomyCache: TaxonomyCacheActor
 
     /// Retention of index rows and unreferenced detail records.
     static let retentionWindow: TimeInterval = 7 * 24 * 60 * 60
@@ -27,6 +30,22 @@ struct MangaSyncService {
             pageDTO = try await mangaRepository.fetchMangas(page: page, per: per)
         case .best:
             pageDTO = try await mangaRepository.fetchBestMangas(page: page, per: per)
+        case .byGenre(let genre):
+            pageDTO = try await mangaRepository.fetchMangasByGenre(genre, page: page, per: per)
+        case .byTheme(let theme):
+            pageDTO = try await mangaRepository.fetchMangasByTheme(theme, page: page, per: per)
+        case .byDemographic(let demographic):
+            pageDTO = try await mangaRepository.fetchMangasByDemographic(demographic, page: page, per: per)
+        case .byAuthor(let id, _):
+            pageDTO = try await mangaRepository.fetchMangasByAuthor(id, page: page, per: per)
+        case .titleContains(let query):
+            pageDTO = try await mangaRepository.searchContains(query, page: page, per: per)
+        case .beginsWith(let query):
+            // Not paginated by the server: the first `per` items are the whole result.
+            let items = Array(try await mangaRepository.searchBeginsWith(query).prefix(per))
+            pageDTO = MangaPageDTO(metadata: PageMetadataDTO(total: items.count, page: page, per: per), items: items)
+        case .search(let search):
+            pageDTO = try await mangaRepository.customSearch(search, page: page, per: per)
         }
         // Cancelled while the page was in flight: the caller has moved on, keep the store as it was.
         guard !Task.isCancelled else {
@@ -38,6 +57,19 @@ struct MangaSyncService {
             throw .unknown
         }
         return (received: pageDTO.items.count, total: pageDTO.metadata.total)
+    }
+
+    /// How many index rows `mode` holds right now, so a screen can tell whether the pages it
+    /// loaded are still indexed. A store failure reports 0, which asks for a reload: erring
+    /// towards loading again is the safe side.
+    func indexedCount(mode: CatalogMode) async -> Int {
+        (try? await syncActor.indexedCount(modeKey: mode.modeKey)) ?? 0
+    }
+
+    /// The genre, theme and demographic lists of the session, each requested once for every
+    /// screen built on this service, and the error of the first list that failed, if any.
+    func loadTaxonomies() async -> (catalog: TaxonomyCatalog, error: APIError?) {
+        await taxonomyCache.load()
     }
 
     /// Start-up maintenance: purges the index first, then the detail records nothing references

@@ -208,6 +208,131 @@ struct MappingTests {
         #expect(label == "Monster, score \(Self.monsterScoreText)")
     }
 
+    // MARK: - Unscored mangas
+
+    /// The backend sends `score: 0` for a manga nobody has rated; an average of 1–10 votes can
+    /// never be 0, so the value means "no score" and must never be shown as a real grade.
+    private static func unscoredMonster(withAuthor: Bool) throws -> Manga {
+        let dto = try Self.monster().replacing(score: 0)
+        let manga = dto.makeManga()
+        try #require(manga.score == 0)
+        if withAuthor {
+            manga.authors = dto.authors.map { $0.makeAuthor() }
+        }
+        return manga
+    }
+
+    @Test(arguments: [
+        (true, "Monster, by Naoki Urasawa, no score"),
+        (false, "Monster, no score"),
+    ])
+    func `A manga with score 0 reads as unscored, never as a zero grade`(
+        withAuthor: Bool,
+        expectedCatalogLabel: String
+    ) throws {
+        let manga = try Self.unscoredMonster(withAuthor: withAuthor)
+
+        #expect(!manga.isScored)
+        #expect(manga.formattedScore == "—")
+        #expect(manga.scoreAccessibilityLabel == "No score")
+        #expect(manga.catalogAccessibilityLabel == expectedCatalogLabel)
+        #expect(manga.catalogAccessibilityLabel.hasSuffix(", no score"))
+        #expect(!manga.catalogAccessibilityLabel.contains("0"))
+    }
+
+    @Test func `A scored manga keeps its two-decimal grade in every label`() throws {
+        let dto = try Self.monster()
+        let manga = dto.makeManga()
+        manga.authors = dto.authors.map { $0.makeAuthor() }
+
+        #expect(manga.isScored)
+        #expect(manga.formattedScore == Self.monsterScoreText)
+        #expect(manga.scoreAccessibilityLabel == "Score \(Self.monsterScoreText)")
+        #expect(manga.catalogAccessibilityLabel.contains("score \(Self.monsterScoreText)"))
+    }
+
+    @Test func `attributedJapaneseTitle tags the Japanese title with the Japanese language identifier`() throws {
+        let manga = try Self.monster().makeManga()
+        manga.titleJapanese = "モンスター"
+
+        let attributed = try #require(manga.attributedJapaneseTitle)
+
+        #expect(String(attributed.characters) == "モンスター")
+        #expect(attributed.languageIdentifier == "ja")
+
+        manga.titleJapanese = nil
+        #expect(manga.attributedJapaneseTitle == nil)
+    }
+
+    // MARK: - Author order
+
+    /// Author ids of Berserk as `mangas_page.json` lists them: Kentarou Miura, then Studio Gaga.
+    private static let miuraID = "6F0B6948-08C4-4761-8BE1-192E68AB0A2F"
+    private static let studioGagaID = "0304C4E9-2D89-463A-8FDD-EEAB5B9D57B3"
+
+    /// Berserk from the real `/list/mangas` page: the only fixture manga whose API order matters
+    /// for the defect, because the second author is a studio credited for the art.
+    private static func berserk() throws -> MangaDTO {
+        try #require(PersistenceTestSupport.pageItems("mangas_page.json").first { $0.id == 2 })
+    }
+
+    @Test func `makeManga stores the author ids in the order the server lists them`() throws {
+        let manga = try Self.berserk().makeManga()
+
+        #expect(manga.authorOrder.map(\.uuidString) == [Self.miuraID, Self.studioGagaID])
+    }
+
+    @Test func `apply replaces the author order when the server reorders the authors`() throws {
+        let dto = try Self.berserk()
+        let manga = dto.makeManga()
+
+        dto.replacing(authors: Array(dto.authors.reversed())).apply(to: manga)
+
+        #expect(manga.authorOrder.map(\.uuidString) == [Self.studioGagaID, Self.miuraID])
+    }
+
+    /// The relationship array keeps no order, so the same `authors` value is checked against both
+    /// orders of `authorOrder`: only honoring `authorOrder` can satisfy the two cases.
+    @Test(arguments: [
+        ([MappingTests.miuraID, MappingTests.studioGagaID], "Kentarou Miura"),
+        ([MappingTests.studioGagaID, MappingTests.miuraID], "Studio Gaga"),
+    ])
+    func `orderedAuthors and primaryAuthorName follow authorOrder, not the relationship`(
+        order: [String],
+        expectedPrimary: String
+    ) throws {
+        let dto = try Self.berserk()
+        let manga = dto.makeManga()
+        manga.authors = dto.authors.reversed().map { $0.makeAuthor() }
+        manga.authorOrder = order.compactMap(UUID.init(uuidString:))
+        try #require(manga.authorOrder.count == 2)
+
+        #expect(manga.orderedAuthors.map(\.id.uuidString) == order)
+        #expect(manga.primaryAuthorName == expectedPrimary)
+        #expect(manga.catalogAccessibilityLabel.contains(", by \(expectedPrimary), "))
+    }
+
+    /// A store written before the order existed has an empty or partial `authorOrder`: the
+    /// authors it does not list go after the listed ones, alphabetically by full name.
+    @Test(arguments: [
+        ([MappingTests.studioGagaID], ["Studio Gaga", "Akira Toriyama", "Kentarou Miura"]),
+        ([], ["Akira Toriyama", "Kentarou Miura", "Studio Gaga"]),
+    ])
+    func `orderedAuthors puts the authors missing from authorOrder last, by full name`(
+        order: [String],
+        expectedNames: [String]
+    ) throws {
+        let dto = try Self.berserk()
+        let manga = dto.makeManga()
+        let toriyama = AuthorDTO(id: UUID(), firstName: "Akira", lastName: "Toriyama", role: .storyAndArt)
+        manga.authors = (dto.authors + [toriyama]).map { $0.makeAuthor() }
+        manga.authorOrder = order.compactMap(UUID.init(uuidString:))
+        try #require(manga.authorOrder.count == order.count)
+
+        #expect(manga.orderedAuthors.map(\.fullName) == expectedNames)
+        #expect(manga.primaryAuthorName == expectedNames.first)
+    }
+
     // MARK: - Inline fixture (shape from the backend OpenAPI)
 
     private static func mangaJSON(

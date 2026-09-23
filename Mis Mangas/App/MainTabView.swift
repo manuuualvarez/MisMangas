@@ -7,7 +7,8 @@
 
 import SwiftUI
 
-/// Top-level tabs: a tab bar on iPhone, a sidebar-adaptable bar on iPad.
+/// Top-level tabs: a tab bar on iPhone, a sidebar-adaptable bar on iPad. Search is the tab with
+/// that role: the system draws it apart from the others and hosts its field.
 struct MainTabView: View {
     @Environment(AppDependencies.self) private var dependencies
 
@@ -15,6 +16,9 @@ struct MainTabView: View {
         TabView {
             Tab("Catalog", systemImage: "books.vertical") {
                 CatalogView(syncService: dependencies.syncService)
+            }
+            Tab(role: .search) {
+                SearchView(syncService: dependencies.syncService)
             }
         }
         .tabViewStyle(.sidebarAdaptable)

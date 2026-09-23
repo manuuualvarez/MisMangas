@@ -29,7 +29,12 @@ extension SharedMockSuites {
             let made = try PersistenceTestSupport.makeActor()
             actor = made.actor
             container = made.container
-            service = MangaSyncService(syncActor: actor, mangaRepository: DefaultMangaRepositoryTest())
+            let repository = DefaultMangaRepositoryTest()
+            service = MangaSyncService(
+                syncActor: actor,
+                mangaRepository: repository,
+                taxonomyCache: TaxonomyCacheActor(mangaRepository: repository)
+            )
         }
 
         // MARK: - loadCatalogPage
@@ -88,6 +93,36 @@ extension SharedMockSuites {
             #expect(try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).isEmpty)
         }
 
+        // MARK: - indexedCount
+
+        @Test func `indexedCount reports the 40 rows two pages of the same mode left indexed`() async throws {
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            _ = try await service.loadCatalogPage(mode: .all, page: 1, per: 20)
+            _ = try await service.loadCatalogPage(mode: .all, page: 2, per: 20)
+
+            let count = await service.indexedCount(mode: .all)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let stored = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).count
+            #expect(stored == 40)
+            #expect(count == stored)
+            // Both pages carried the same 20 mangas: what is counted is index rows, not mangas.
+            #expect(try PersistenceTestSupport.mangasByID(in: context).count == 20)
+        }
+
+        @Test func `indexedCount of a mode never loaded is zero and asks the store, not the wire`() async throws {
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            _ = try await service.loadCatalogPage(mode: .all, page: 1, per: 20)
+
+            let count = await service.indexedCount(mode: .best)
+
+            #expect(count == 0)
+            #expect(CatalogMockScenario.hits(.listBestMangas) == 0)
+            // The store is not empty: the zero belongs to the mode asked for.
+            let context = PersistenceTestSupport.freshContext(container)
+            #expect(try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).count == 20)
+        }
+
         // MARK: - Failures
 
         @Test func `A 500 surfaces serverError and leaves the store empty`() async throws {
@@ -116,7 +151,12 @@ extension SharedMockSuites {
         }
 
         @Test func `A page that arrives after the task was cancelled surfaces cancelled and leaves the store empty`() async throws {
-            let cancellingService = MangaSyncService(syncActor: actor, mangaRepository: CancellingMangaRepository())
+            let repository = CancellingMangaRepository()
+            let cancellingService = MangaSyncService(
+                syncActor: actor,
+                mangaRepository: repository,
+                taxonomyCache: TaxonomyCacheActor(mangaRepository: repository)
+            )
 
             // A child task, so the fake cancels the load and not the test itself.
             let load = Task {

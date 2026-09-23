@@ -25,6 +25,8 @@ extension SharedMockSuites {
         private static let serverPages = 3242
 
         private let viewModel: CatalogViewModel
+        /// The service behind `viewModel`, for tests that open a second screen on the same store.
+        private let service: MangaSyncService
         private let container: ModelContainer
         /// First 20 items of `/list/mangas`, in server order.
         private let allPage1: [MangaDTO]
@@ -33,7 +35,12 @@ extension SharedMockSuites {
             CatalogMockScenario.reset()
             let made = try PersistenceTestSupport.makeActor()
             container = made.container
-            let service = MangaSyncService(syncActor: made.actor, mangaRepository: DefaultMangaRepositoryTest())
+            let repository = DefaultMangaRepositoryTest()
+            service = MangaSyncService(
+                syncActor: made.actor,
+                mangaRepository: repository,
+                taxonomyCache: TaxonomyCacheActor(mangaRepository: repository)
+            )
             viewModel = CatalogViewModel(syncService: service)
             allPage1 = try PersistenceTestSupport.pageItems("mangas_page.json")
         }
@@ -308,6 +315,34 @@ extension SharedMockSuites {
             #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id))
         }
 
+        @Test func `A failed refresh keeps the paging so the next page follows the rows still indexed`() async throws {
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            await viewModel.loadInitial(mode: .all)
+            try CatalogMockScenario.set(.listMangas, .data(encodedPage(page(2), page: 2)))
+            await viewModel.loadMore()
+            CatalogMockScenario.set(.listMangas, .status(500))
+            await viewModel.refresh()
+            let failure = try #require(viewModel.loadError)
+            expectAPIError(.serverError, matches: failure)
+            let page3 = page(3)
+            try CatalogMockScenario.set(.listMangas, .data(encodedPage(page3, page: 3)))
+
+            await viewModel.loadMore()
+
+            // The refresh stored nothing, so the 40 rows of pages 1 and 2 are still on screen and
+            // the next page is the third one, not the first again.
+            let requests = CatalogMockScenario.requests(.listMangas)
+            #expect(requests.count == 4)
+            #expect(requests.last?.queryValues == ["page": "3", "per": "20"])
+            #expect(viewModel.currentPage == 3)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+            let context = PersistenceTestSupport.freshContext(container)
+            let entries = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
+            #expect(entries.map(\.ordinal) == Array(0 ..< 60))
+            #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id) + page(2).map(\.id) + page3.map(\.id))
+        }
+
         // MARK: - Refresh
 
         @Test func `refresh reloads page 1 of the current mode and discards the pages after it`() async throws {
@@ -360,6 +395,303 @@ extension SharedMockSuites {
             #expect(best.map(\.ordinal) == Array(0 ..< 20))
             #expect(best.compactMap(\.manga?.id) == bestIDs)
             #expect(try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context).isEmpty)
+        }
+
+        @Test func `A first page that fails on a new mode does not inherit the paging of the previous one`() async throws {
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            await viewModel.loadInitial(mode: .all)
+            for number in 2 ... 3 {
+                try CatalogMockScenario.set(.listMangas, .data(encodedPage(page(number), page: number)))
+                await viewModel.loadMore()
+            }
+            #expect(viewModel.currentPage == 3)
+            CatalogMockScenario.set(.listBestMangas, .status(500))
+            await viewModel.loadInitial(mode: .best)
+            let failure = try #require(viewModel.loadError)
+            expectAPIError(.serverError, matches: failure)
+            CatalogMockScenario.set(.listBestMangas, .fixture("mangas_page_best.json"))
+            let bestIDs = try PersistenceTestSupport.pageItems("mangas_page_best.json").map(\.id)
+
+            await viewModel.loadMore()
+
+            // Best has no rows yet: the page after "none" is the first one. Asking for the page
+            // after All's third would index Best from ordinal 60 and skip 60 items in silence.
+            let sent = try #require(CatalogMockScenario.lastRequest(.listBestMangas))
+            #expect(sent.queryValues["page"] == "1")
+            #expect(CatalogMockScenario.hits(.listBestMangas) == 2)
+            #expect(viewModel.currentMode == .best)
+            #expect(viewModel.currentPage == 1)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+            let context = PersistenceTestSupport.freshContext(container)
+            let best = try PersistenceTestSupport.catalogEntries(modeKey: "best", in: context)
+            #expect(best.map(\.ordinal) == Array(0 ..< 20))
+            #expect(best.compactMap(\.manga?.id) == bestIDs)
+        }
+
+        // MARK: - Showing the screen again
+
+        @Test func `The first loadInitialIfNeeded of a mode requests page 1 and indexes it`() async throws {
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+
+            await viewModel.loadInitialIfNeeded(mode: .all)
+
+            let requests = CatalogMockScenario.requests(.listMangas)
+            #expect(requests.count == 1)
+            #expect(requests.last?.queryValues == ["page": "1", "per": "20"])
+            #expect(viewModel.currentMode == .all)
+            #expect(viewModel.currentPage == 1)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let entries = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
+            #expect(entries.map(\.ordinal) == Array(0 ..< 20))
+            #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id))
+        }
+
+        @Test func `Showing the same mode again sends no request and keeps the pages already loaded`() async throws {
+            // The whole screen goes through `loadInitialIfNeeded`, first appearance included:
+            // what is under test is precisely what the second appearance does with the first one.
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            await viewModel.loadInitialIfNeeded(mode: .all)
+            let page2 = page(2)
+            try CatalogMockScenario.set(.listMangas, .data(encodedPage(page2, page: 2)))
+            await viewModel.loadMore()
+            #expect(CatalogMockScenario.hits(.listMangas) == 2)
+
+            await viewModel.loadInitialIfNeeded(mode: .all)
+
+            #expect(CatalogMockScenario.hits(.listMangas) == 2)
+            #expect(viewModel.currentMode == .all)
+            #expect(viewModel.currentPage == 2)
+            #expect(viewModel.hasNextPage)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let entries = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
+            #expect(entries.map(\.ordinal) == Array(0 ..< 40))
+            #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id) + page2.map(\.id))
+        }
+
+        @Test func `Coming back to the mode already loaded drops the other mode's load and goes on paging`() async throws {
+            let viewModel = viewModel
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            await viewModel.loadInitialIfNeeded(mode: .all)
+            CatalogMockScenario.set(.listBestMangas, .delayed(for: .milliseconds(400), then: .fixture("mangas_page_best.json")))
+            // The reader picks Best and comes back to All before its page 1 lands.
+            let switching = Task { await viewModel.loadInitial(mode: .best) }
+            try await Task.sleep(for: .milliseconds(100))
+
+            await viewModel.loadInitialIfNeeded(mode: .all)
+
+            // The screen shows All again: the mode, the spinner and the paging state must say so.
+            #expect(viewModel.currentMode == .all)
+            #expect(!viewModel.isLoading)
+            #expect(viewModel.currentPage == 1)
+            #expect(viewModel.hasNextPage)
+            #expect(CatalogMockScenario.hits(.listMangas) == 1)
+            await switching.value
+            // Longer than the mock delay: a late "best" response would have landed by now.
+            try await Task.sleep(for: .milliseconds(500))
+            #expect(viewModel.currentMode == .all)
+
+            let page2 = page(2)
+            try CatalogMockScenario.set(.listMangas, .data(encodedPage(page2, page: 2)))
+            await viewModel.loadMore()
+
+            let requests = CatalogMockScenario.requests(.listMangas)
+            #expect(requests.count == 2)
+            #expect(requests.last?.queryValues == ["page": "2", "per": "20"])
+            #expect(CatalogMockScenario.hits(.listBestMangas) == 1)
+            #expect(viewModel.currentPage == 2)
+            #expect(viewModel.loadError == nil)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let entries = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
+            #expect(entries.map(\.ordinal) == Array(0 ..< 40))
+            #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id) + page2.map(\.id))
+            #expect(try PersistenceTestSupport.catalogEntries(modeKey: "best", in: context).isEmpty)
+        }
+
+        @Test func `loadInitialIfNeeded loads a mode other than the one already on screen`() async throws {
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+            CatalogMockScenario.set(.listBestMangas, .fixture("mangas_page_best.json"))
+            let bestIDs = try PersistenceTestSupport.pageItems("mangas_page_best.json").map(\.id)
+            await viewModel.loadInitialIfNeeded(mode: .all)
+
+            await viewModel.loadInitialIfNeeded(mode: .best)
+
+            #expect(CatalogMockScenario.hits(.listMangas) == 1)
+            #expect(CatalogMockScenario.hits(.listBestMangas) == 1)
+            #expect(viewModel.currentMode == .best)
+            #expect(viewModel.currentPage == 1)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let best = try PersistenceTestSupport.catalogEntries(modeKey: "best", in: context)
+            #expect(best.map(\.ordinal) == Array(0 ..< 20))
+            #expect(best.compactMap(\.manga?.id) == bestIDs)
+            let all = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
+            #expect(all.compactMap(\.manga?.id) == allPage1.map(\.id))
+        }
+
+        @Test func `A cancelled first page leaves the mode unloaded and showing it again loads it`() async throws {
+            // Half a second of "all" in flight against a 50 ms wait: the switch below cancels it
+            // with 450 ms to spare, however slowly the task starts.
+            CatalogMockScenario.set(.listMangas, .delayed(for: .milliseconds(500), then: .fixture("mangas_page.json")))
+            CatalogMockScenario.set(.listBestMangas, .delayed(for: .milliseconds(400), then: .fixture("mangas_page_best.json")))
+            let viewModel = viewModel
+            let cancelled = Task { await viewModel.loadInitialIfNeeded(mode: .all) }
+            try await Task.sleep(for: .milliseconds(50))
+            // Leaving the mode while its page 1 is in flight cancels it: nothing of it reaches
+            // the store, so nothing of it can count as loaded either.
+            let switching = Task { await viewModel.loadInitial(mode: .best) }
+            await cancelled.value
+            // The mode that took over is still waiting for its own page 1 — the mock answers one
+            // request at a time and is still sleeping out the cancelled one — so what the call
+            // below does is decided by the cancelled load, not by this one's outcome.
+            try await Task.sleep(for: .milliseconds(100))
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+
+            await viewModel.loadInitialIfNeeded(mode: .all)
+
+            await switching.value
+            // Longer than the mock delay: a late "best" response would have landed by now.
+            try await Task.sleep(for: .milliseconds(300))
+            let requests = CatalogMockScenario.requests(.listMangas)
+            #expect(requests.count == 2)
+            #expect(requests.last?.queryValues == ["page": "1", "per": "20"])
+            #expect(viewModel.currentMode == .all)
+            #expect(viewModel.currentPage == 1)
+            #expect(viewModel.hasNextPage)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let entries = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
+            #expect(entries.map(\.ordinal) == Array(0 ..< 20))
+            #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id))
+            #expect(try PersistenceTestSupport.catalogEntries(modeKey: "best", in: context).isEmpty)
+        }
+
+        @Test func `loadInitialIfNeeded asks again for a first page that failed`() async throws {
+            CatalogMockScenario.set(.listMangas, .status(500))
+            await viewModel.loadInitialIfNeeded(mode: .all)
+            #expect(CatalogMockScenario.hits(.listMangas) == 1)
+            let failure = try #require(viewModel.loadError)
+            expectAPIError(.serverError, matches: failure)
+            CatalogMockScenario.set(.listMangas, .fixture("mangas_page.json"))
+
+            await viewModel.loadInitialIfNeeded(mode: .all)
+
+            let requests = CatalogMockScenario.requests(.listMangas)
+            #expect(requests.count == 2)
+            #expect(requests.last?.queryValues == ["page": "1", "per": "20"])
+            #expect(viewModel.currentMode == .all)
+            #expect(viewModel.currentPage == 1)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let entries = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
+            #expect(entries.map(\.ordinal) == Array(0 ..< 20))
+            #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id))
+        }
+
+        // MARK: - An index other screens share
+
+        @Test func `A mode whose index another screen replaced is loaded again from page 1`() async throws {
+            let mode = CatalogMode.byGenre("Romance")
+            CatalogMockScenario.set(.mangaByGenre, .fixture("mangas_page.json"))
+            await viewModel.loadInitialIfNeeded(mode: mode)
+            let page2 = page(2)
+            try CatalogMockScenario.set(.mangaByGenre, .data(encodedPage(page2, page: 2)))
+            await viewModel.loadMore()
+            #expect(viewModel.currentPage == 2)
+            #expect(CatalogMockScenario.hits(.mangaByGenre) == 2)
+
+            // Another screen asks for page 1 of the same mode. Storing a page 1 replaces the
+            // whole index of the mode, so the 40 rows this screen paged through are down to 20.
+            CatalogMockScenario.set(.mangaByGenre, .fixture("mangas_page.json"))
+            let otherScreen = CatalogViewModel(syncService: service)
+            await otherScreen.loadInitialIfNeeded(mode: mode)
+            #expect(CatalogMockScenario.hits(.mangaByGenre) == 3)
+            let replaced = PersistenceTestSupport.freshContext(container)
+            #expect(try PersistenceTestSupport.catalogEntries(modeKey: "genre:Romance", in: replaced).count == 20)
+
+            await viewModel.loadInitialIfNeeded(mode: mode)
+
+            // Going on from page 2 over an index of 20 rows would skip 20 items in silence.
+            #expect(CatalogMockScenario.hits(.mangaByGenre) == 4)
+            #expect(CatalogMockScenario.requests(.mangaByGenre).last?.queryValues == ["page": "1", "per": "20"])
+            #expect(viewModel.currentMode == mode)
+            #expect(viewModel.currentPage == 1)
+            #expect(viewModel.hasNextPage)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let entries = try PersistenceTestSupport.catalogEntries(modeKey: "genre:Romance", in: context)
+            #expect(entries.map(\.ordinal) == Array(0 ..< 20))
+            #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id))
+        }
+
+        @Test func `A cancelled check does not reload a mode whose index another screen replaced`() async throws {
+            let mode = CatalogMode.byGenre("Romance")
+            CatalogMockScenario.set(.mangaByGenre, .fixture("mangas_page.json"))
+            await viewModel.loadInitialIfNeeded(mode: mode)
+            let page2 = page(2)
+            try CatalogMockScenario.set(.mangaByGenre, .data(encodedPage(page2, page: 2)))
+            await viewModel.loadMore()
+            #expect(viewModel.currentPage == 2)
+
+            CatalogMockScenario.set(.mangaByGenre, .fixture("mangas_page.json"))
+            let otherScreen = CatalogViewModel(syncService: service)
+            await otherScreen.loadInitialIfNeeded(mode: mode)
+            let replaced = PersistenceTestSupport.freshContext(container)
+            try #require(try PersistenceTestSupport.catalogEntries(modeKey: "genre:Romance", in: replaced).count == 20)
+            let hitsBefore = CatalogMockScenario.hits(.mangaByGenre)
+
+            // The task inherits the main actor, so it only starts once the test suspends on
+            // its value: by then it is already cancelled, like a view that has gone away.
+            let task = Task { await viewModel.loadInitialIfNeeded(mode: mode) }
+            task.cancel()
+            await task.value
+
+            #expect(CatalogMockScenario.hits(.mangaByGenre) == hitsBefore)
+            #expect(viewModel.currentPage == 2)
+        }
+
+        @Test func `A mode another screen paged further is not loaded again`() async throws {
+            let mode = CatalogMode.byGenre("Romance")
+            CatalogMockScenario.set(.mangaByGenre, .fixture("mangas_page.json"))
+            await viewModel.loadInitialIfNeeded(mode: mode)
+            #expect(CatalogMockScenario.hits(.mangaByGenre) == 1)
+
+            // Another screen loads the same mode and pages on: the index ends up holding more
+            // than this screen ever loaded, and every row it shows is still there.
+            let otherScreen = CatalogViewModel(syncService: service)
+            await otherScreen.loadInitialIfNeeded(mode: mode)
+            let page2 = page(2)
+            try CatalogMockScenario.set(.mangaByGenre, .data(encodedPage(page2, page: 2)))
+            await otherScreen.loadMore()
+            #expect(CatalogMockScenario.hits(.mangaByGenre) == 3)
+
+            await viewModel.loadInitialIfNeeded(mode: mode)
+
+            #expect(CatalogMockScenario.hits(.mangaByGenre) == 3)
+            #expect(viewModel.currentMode == mode)
+            #expect(viewModel.currentPage == 1)
+            #expect(viewModel.loadError == nil)
+            #expect(!viewModel.isLoading)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            let entries = try PersistenceTestSupport.catalogEntries(modeKey: "genre:Romance", in: context)
+            #expect(entries.map(\.ordinal) == Array(0 ..< 40))
+            #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id) + page2.map(\.id))
         }
     }
 }

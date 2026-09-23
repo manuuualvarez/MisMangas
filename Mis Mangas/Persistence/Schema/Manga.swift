@@ -30,6 +30,9 @@ final class Manga {
     var genres: [String]
     var themes: [String]
     var demographics: [String]
+    /// Author ids in the order the server lists them; the relationship does not keep an order.
+    /// The default lets a store written before this attribute existed migrate in place.
+    var authorOrder: [UUID] = []
     /// Last time the full record arrived from the server; `nil` until then.
     var cachedAt: Date?
     /// Mirrors `collectionEntry != nil`, so predicates and widget fetches can filter on it.
@@ -102,14 +105,60 @@ extension Manga {
         mainPictureURL.flatMap(URL.init(string:))
     }
 
-    /// Full name of the first author; `nil` without authors.
-    var primaryAuthorName: String? {
-        authors.first?.fullName
+    /// The authors in the order the server lists them. Any author missing from `authorOrder`
+    /// (a record stored before the order was kept) follows, by full name, so the order never
+    /// depends on how the store returns the relationship.
+    var orderedAuthors: [Author] {
+        let positions = Dictionary(authorOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return authors.sorted { lhs, rhs in
+            switch (positions[lhs.id], positions[rhs.id]) {
+            case let (left?, right?):
+                left < right
+            case (.some, nil):
+                true
+            case (nil, .some):
+                false
+            case (nil, nil):
+                lhs.fullName < rhs.fullName
+            }
+        }
     }
 
-    /// The score with two decimals in the user's locale.
+    /// Full name of the author the server lists first; `nil` without authors.
+    var primaryAuthorName: String? {
+        orderedAuthors.first?.fullName
+    }
+
+    /// Whether any classification list (demographics, genres, themes) has content.
+    var hasTags: Bool {
+        !(demographics.isEmpty && genres.isEmpty && themes.isEmpty)
+    }
+
+    /// The Japanese title tagged as Japanese, so the text is typeset with Japanese rules and
+    /// assistive technologies speak it in Japanese instead of in the app's language.
+    var attributedJapaneseTitle: AttributedString? {
+        guard let titleJapanese else {
+            return nil
+        }
+        var attributed = AttributedString(titleJapanese)
+        attributed.languageIdentifier = "ja"
+        return attributed
+    }
+
+    /// Whether anyone has rated the manga. The server sends 0 for an unrated one: an average of
+    /// user votes from 1 to 10 can never be 0, so 0 is the absence of a score, not a grade.
+    var isScored: Bool {
+        score > 0
+    }
+
+    /// The score with two decimals in the user's locale, or a dash when nobody has rated it.
     var formattedScore: String {
-        score.formatted(.number.precision(.fractionLength(2)))
+        isScored ? score.formatted(.number.precision(.fractionLength(2))) : "—"
+    }
+
+    /// What VoiceOver reads for the score on its own: the grade, or that there is none.
+    var scoreAccessibilityLabel: String {
+        isScored ? String(localized: "Score \(formattedScore)") : String(localized: "No score")
     }
 
     /// The publication line in words ("Finished, 1994 to 2001", "Publishing, since 1989", or the
@@ -126,12 +175,17 @@ extension Manga {
     }
 
     /// What VoiceOver reads for a catalog row or cell: title, first author (when there is one)
-    /// and score.
+    /// and score, or that it has none.
     var catalogAccessibilityLabel: String {
-        if let author = primaryAuthorName {
+        switch (primaryAuthorName, isScored) {
+        case let (author?, true):
             String(localized: "\(title), by \(author), score \(formattedScore)")
-        } else {
+        case let (author?, false):
+            String(localized: "\(title), by \(author), no score")
+        case (nil, true):
             String(localized: "\(title), score \(formattedScore)")
+        case (nil, false):
+            String(localized: "\(title), no score")
         }
     }
 }

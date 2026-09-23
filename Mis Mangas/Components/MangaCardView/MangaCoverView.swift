@@ -12,6 +12,8 @@ import SwiftUI
 /// optionally with the score in a capsule over the top-trailing corner.
 struct MangaCoverView: View {
     enum Size {
+        /// For dense rows such as search suggestions.
+        case thumbnail
         case small
         case medium
         case large
@@ -20,6 +22,7 @@ struct MangaCoverView: View {
 
         var width: CGFloat? {
             switch self {
+            case .thumbnail: 44
             case .small: 80
             case .medium: 140
             case .large: 200
@@ -45,16 +48,18 @@ struct MangaCoverView: View {
             .aspectRatio(2 / 3, contentMode: .fit)
             .frame(width: size.width, height: size.height)
             .overlay {
-                RemoteImageView(url: manga.coverURL)
+                RemoteImageView(url: manga.coverURL, label: String(localized: "Cover of \(manga.title)"))
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(alignment: .topTrailing) {
                 if showsScore {
                     Text(manga.formattedScore)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.mmLabel)
+                        .foregroundStyle(.mmLabel)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
+                        // Spelled with the type on purpose: written as an implicit member, the
+                        // app crashed at launch while the grid measured its cells.
                         .background(Color.mmSurface.opacity(reduceTransparency ? 1 : 0.9), in: Capsule())
                         .padding(6)
                         .accessibilityHidden(true)

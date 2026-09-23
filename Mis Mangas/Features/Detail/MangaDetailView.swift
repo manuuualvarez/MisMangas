@@ -19,11 +19,10 @@ struct MangaDetailView: View {
                 MangaHeaderView(manga: manga)
                 MangaStatisticsView(volumes: manga.volumes, chapters: manga.chapters)
                 if !manga.authors.isEmpty {
-                    MangaAuthorsView(authors: manga.authors)
+                    MangaAuthorsView(authors: manga.orderedAuthors)
                 }
-                let tags = manga.demographics + manga.genres + manga.themes
-                if !tags.isEmpty {
-                    MangaTagsView(tags: tags)
+                if manga.hasTags {
+                    MangaTagsView(demographics: manga.demographics, genres: manga.genres, themes: manga.themes)
                 }
                 if let synopsis = manga.synopsis, !synopsis.isEmpty {
                     MangaSynopsisView(synopsis: synopsis)
