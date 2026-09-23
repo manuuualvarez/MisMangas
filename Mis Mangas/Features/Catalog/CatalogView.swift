@@ -18,6 +18,10 @@ struct CatalogView: View {
     @State private var viewModel: CatalogViewModel
     @State private var selectedMode: CatalogMode
     @State private var selectedManga: Manga?
+    /// Which column shows when the split view collapses into one: a grid cell selects with a
+    /// button, and only a list selection makes the collapsed split view push the detail on
+    /// its own.
+    @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var isPresentingFilters = false
     @AppStorage("catalog.displayMode") private var displayMode: DisplayMode = .grid
     @Namespace private var heroNamespace
@@ -28,7 +32,7 @@ struct CatalogView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(preferredCompactColumn: $compactColumn) {
             Group {
                 switch displayMode {
                 case .grid:
@@ -112,6 +116,16 @@ struct CatalogView: View {
             CatalogFiltersView(mode: selectedMode, viewModel: viewModel)
         }
         .environment(\.applyCatalogMode, modeApplier)
+        // Collapsed, the detail shows whenever a manga is selected, whether a list row or a
+        // grid cell selected it; going back deselects it, so the same cell opens it again.
+        .onChange(of: selectedManga) { _, manga in
+            compactColumn = manga == nil ? .sidebar : .detail
+        }
+        .onChange(of: compactColumn) { _, column in
+            if column == .sidebar {
+                selectedManga = nil
+            }
+        }
         // Outside the identity change, or a fresh split view would never see the mode change.
         // A chip in the detail column changes the catalog's title while focus is elsewhere.
         .onChange(of: selectedMode) { _, mode in

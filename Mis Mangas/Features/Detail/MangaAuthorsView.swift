@@ -51,5 +51,5 @@ struct MangaAuthorsView: View {
 
 #Preview("Authors", traits: .sampleData) {
     @Previewable @Query var mangas: [Manga]
-    if let manga = mangas.first { MangaAuthorsView(authors: manga.authors).padding() }
+    if let manga = mangas.first { MangaAuthorsView(authors: manga.orderedAuthors).padding() }
 }

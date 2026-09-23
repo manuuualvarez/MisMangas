@@ -33,7 +33,7 @@ struct MangaHeaderView: View {
                 }
                 Label(manga.formattedScore, systemImage: "star.fill")
                     .font(.headline)
-                    .accessibilityLabel(String(localized: "Score \(manga.formattedScore)"))
+                    .accessibilityLabel(manga.scoreAccessibilityLabel)
                 publication
                     .font(.subheadline)
                     .foregroundStyle(.mmSecondaryLabel)

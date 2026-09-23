@@ -16,6 +16,10 @@ import SwiftUI
 struct SearchView: View {
     @State private var viewModel: CatalogViewModel
     @State private var selectedManga: Manga?
+    /// Which column shows when the split view collapses into one: a grid cell selects with a
+    /// button, and only a list selection makes the collapsed split view push the detail on
+    /// its own.
+    @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var isPresentingAdvancedSearch = false
     @AppStorage("catalog.displayMode") private var displayMode: DisplayMode = .grid
     @Namespace private var heroNamespace
@@ -25,7 +29,7 @@ struct SearchView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(preferredCompactColumn: $compactColumn) {
             Group {
                 if viewModel.currentMode.isFiltered {
                     switch displayMode {
@@ -74,6 +78,9 @@ struct SearchView: View {
                     .accessibilityLabel("Layout")
                     .accessibilityValue(Text(displayMode.title))
                     .accessibilityHint(displayMode.toggled == .list ? "Shows the results as a list" : "Shows the results as a grid")
+                    // Voice Control users name what they see: the icon shows the layout in use,
+                    // the large content viewer the one it switches to, neither the accessible name.
+                    .accessibilityInputLabels([Text("Layout"), Text(displayMode.title), Text(displayMode.toggled.title)])
                     .disabled(!viewModel.currentMode.isFiltered)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -136,6 +143,16 @@ struct SearchView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .environment(\.applyCatalogMode, SearchModeApplier(viewModel: viewModel, selectedManga: $selectedManga))
+        // Collapsed, the detail shows whenever a manga is selected, whether a list row or a
+        // grid cell selected it; going back deselects it, so the same cell opens it again.
+        .onChange(of: selectedManga) { _, manga in
+            compactColumn = manga == nil ? .sidebar : .detail
+        }
+        .onChange(of: compactColumn) { _, column in
+            if column == .sidebar {
+                selectedManga = nil
+            }
+        }
         // What lands under the field while focus stays in it is announced: results replacing
         // the content, suggestions, author matches and failures.
         .onChange(of: viewModel.currentMode) { _, mode in

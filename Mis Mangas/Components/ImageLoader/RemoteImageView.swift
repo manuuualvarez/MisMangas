@@ -33,10 +33,13 @@ struct RemoteImageView: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    // A filling image overflows the proposed size; keep its frame (and hit area)
-                    // at the container's bounds and drop the overflow.
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // A filling image is larger than the container. With a minimum and a maximum
+                    // the frame takes the size proposed for it; with a maximum alone it would grow
+                    // to the image, and a wide cover would take the taps of its neighbours.
+                    // Clipping only hides the overflow; the hit area follows the frame.
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                     .clipped()
+                    .contentShape(.rect)
                     .accessibilityLabel(label)
             case .failure:
                 Image(systemName: "photo")

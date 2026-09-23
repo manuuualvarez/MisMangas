@@ -59,6 +59,13 @@ struct MangaSyncService {
         return (received: pageDTO.items.count, total: pageDTO.metadata.total)
     }
 
+    /// How many index rows `mode` holds right now, so a screen can tell whether the pages it
+    /// loaded are still indexed. A store failure reports 0, which asks for a reload: erring
+    /// towards loading again is the safe side.
+    func indexedCount(mode: CatalogMode) async -> Int {
+        (try? await syncActor.indexedCount(modeKey: mode.modeKey)) ?? 0
+    }
+
     /// The genre, theme and demographic lists of the session, each requested once for every
     /// screen built on this service, and the error of the first list that failed, if any.
     func loadTaxonomies() async -> (catalog: TaxonomyCatalog, error: APIError?) {

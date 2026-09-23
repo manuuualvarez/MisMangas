@@ -14,9 +14,6 @@ import SwiftUI
 struct AdvancedSearchView: View {
     @Bindable var viewModel: CatalogViewModel
     @Environment(\.dismiss) private var dismiss
-    @State private var isShowingGenres = false
-    @State private var isShowingThemes = false
-    @State private var isShowingDemographics = false
 
     var body: some View {
         NavigationStack {
@@ -32,98 +29,36 @@ struct AdvancedSearchView: View {
                     TextField("Last name", text: $viewModel.draftAuthorLastName)
                         .accessibilityLabel("Last name")
                 }
-                // Collapsed until asked for: the server lists 21 genres, 52 themes and 5
-                // demographics, and expanded they bury everything below them.
-                Section {
-                    DisclosureGroup(isExpanded: $isShowingGenres) {
-                        if let genres = viewModel.taxonomies?.genres {
-                            if genres.isEmpty, let error = viewModel.taxonomyError {
-                                Text("Couldn't load genres")
-                                InlineErrorView(error: error) {
-                                    Task { await viewModel.loadTaxonomies() }
-                                }
-                            } else {
-                                MultiSelectChipsView(title: "Genres", options: genres, selection: $viewModel.draftGenres)
-                            }
-                        } else {
-                            ProgressView()
-                                .accessibilityLabel("Loading")
-                        }
-                    } label: {
-                        // The count rides in the value, not in the name: read as part of the
-                        // label a screen reader would say the middle dot out loud, and the hint
-                        // is what tells whether tapping opens or closes the group.
-                        if viewModel.draftGenres.isEmpty {
-                            Text("Genres")
-                                .accessibilityHint(isShowingGenres ? "Collapses the genres" : "Expands the genres")
-                        } else {
-                            Text("Genres · \(viewModel.draftGenres.count)")
-                                .accessibilityLabel("Genres")
-                                .accessibilityValue("\(viewModel.draftGenres.count) selected")
-                                .accessibilityHint(isShowingGenres ? "Collapses the genres" : "Expands the genres")
-                        }
-                    }
-                }
-                Section {
-                    DisclosureGroup(isExpanded: $isShowingThemes) {
-                        if let themes = viewModel.taxonomies?.themes {
-                            if themes.isEmpty, let error = viewModel.taxonomyError {
-                                Text("Couldn't load themes")
-                                InlineErrorView(error: error) {
-                                    Task { await viewModel.loadTaxonomies() }
-                                }
-                            } else {
-                                MultiSelectChipsView(title: "Themes", options: themes, selection: $viewModel.draftThemes)
-                            }
-                        } else {
-                            ProgressView()
-                                .accessibilityLabel("Loading")
-                        }
-                    } label: {
-                        // The count rides in the value, not in the name: read as part of the
-                        // label a screen reader would say the middle dot out loud, and the hint
-                        // is what tells whether tapping opens or closes the group.
-                        if viewModel.draftThemes.isEmpty {
-                            Text("Themes")
-                                .accessibilityHint(isShowingThemes ? "Collapses the themes" : "Expands the themes")
-                        } else {
-                            Text("Themes · \(viewModel.draftThemes.count)")
-                                .accessibilityLabel("Themes")
-                                .accessibilityValue("\(viewModel.draftThemes.count) selected")
-                                .accessibilityHint(isShowingThemes ? "Collapses the themes" : "Expands the themes")
-                        }
-                    }
-                }
-                Section {
-                    DisclosureGroup(isExpanded: $isShowingDemographics) {
-                        if let demographics = viewModel.taxonomies?.demographics {
-                            if demographics.isEmpty, let error = viewModel.taxonomyError {
-                                Text("Couldn't load demographics")
-                                InlineErrorView(error: error) {
-                                    Task { await viewModel.loadTaxonomies() }
-                                }
-                            } else {
-                                MultiSelectChipsView(title: "Demographics", options: demographics, selection: $viewModel.draftDemographics)
-                            }
-                        } else {
-                            ProgressView()
-                                .accessibilityLabel("Loading")
-                        }
-                    } label: {
-                        // The count rides in the value, not in the name: read as part of the
-                        // label a screen reader would say the middle dot out loud, and the hint
-                        // is what tells whether tapping opens or closes the group.
-                        if viewModel.draftDemographics.isEmpty {
-                            Text("Demographics")
-                                .accessibilityHint(isShowingDemographics ? "Collapses the demographics" : "Expands the demographics")
-                        } else {
-                            Text("Demographics · \(viewModel.draftDemographics.count)")
-                                .accessibilityLabel("Demographics")
-                                .accessibilityValue("\(viewModel.draftDemographics.count) selected")
-                                .accessibilityHint(isShowingDemographics ? "Collapses the demographics" : "Expands the demographics")
-                        }
-                    }
-                }
+                TaxonomySectionView(
+                    title: "Genres",
+                    unavailableTitle: "Couldn't load genres",
+                    expandHint: "Expands the genres",
+                    collapseHint: "Collapses the genres",
+                    options: viewModel.taxonomies?.genres,
+                    error: viewModel.taxonomyError,
+                    selection: $viewModel.draftGenres,
+                    retry: retry
+                )
+                TaxonomySectionView(
+                    title: "Themes",
+                    unavailableTitle: "Couldn't load themes",
+                    expandHint: "Expands the themes",
+                    collapseHint: "Collapses the themes",
+                    options: viewModel.taxonomies?.themes,
+                    error: viewModel.taxonomyError,
+                    selection: $viewModel.draftThemes,
+                    retry: retry
+                )
+                TaxonomySectionView(
+                    title: "Demographics",
+                    unavailableTitle: "Couldn't load demographics",
+                    expandHint: "Expands the demographics",
+                    collapseHint: "Collapses the demographics",
+                    options: viewModel.taxonomies?.demographics,
+                    error: viewModel.taxonomyError,
+                    selection: $viewModel.draftDemographics,
+                    retry: retry
+                )
                 Section {
                     Toggle("Contains", isOn: $viewModel.draftContains)
                 } footer: {
@@ -154,6 +89,10 @@ struct AdvancedSearchView: View {
         .task {
             await viewModel.loadTaxonomies()
         }
+    }
+
+    private func retry() {
+        Task { await viewModel.loadTaxonomies() }
     }
 }
 

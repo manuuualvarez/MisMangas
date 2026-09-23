@@ -116,6 +116,11 @@ final class CatalogViewModel {
     /// pages already indexed alone.
     @ObservationIgnored
     private var loadedMode: CatalogMode?
+    /// How many rows the last page this screen loaded leaves in the index: everything before that
+    /// page plus what it brought. The index itself is shared, so this is only what this screen
+    /// expects to find there.
+    @ObservationIgnored
+    private var loadedEntryCount = 0
     /// The pending suggestions request, if any; awaiting it is how a caller learns it settled.
     @ObservationIgnored
     private(set) var suggestionsTask: Task<Void, Never>?
@@ -143,21 +148,34 @@ final class CatalogViewModel {
         await run(mode: mode, page: 1)
     }
 
-    /// Loads `mode` unless this screen already loaded it. Showing the screen again — coming back
-    /// to a tab — must not ask for page 1 again: storing it replaces the mode's index, so the
-    /// pages the reader had already scrolled through would vanish under them. Pull to refresh
-    /// still reloads on demand.
+    /// Loads `mode` unless this screen already loaded it and the index still holds those pages.
+    /// Showing the screen again — coming back to a tab — must not ask for page 1 again: storing
+    /// it replaces the mode's index, so the pages the reader had already scrolled through would
+    /// vanish under them. But the index of a mode belongs to the whole app, and another screen
+    /// loading its first page truncates it, which would leave this one paging on from a page
+    /// that is no longer there and skipping everything in between. So the store decides, not
+    /// this screen's memory. Pull to refresh still reloads on demand.
     func loadInitialIfNeeded(mode: CatalogMode) async {
-        guard loadedMode != mode else {
+        if loadedMode == mode {
             // Back on a mode this screen holds while another one was still loading: that load
             // belongs to a mode nobody shows any more, so it is dropped, and the state it would
-            // have settled — the mode and the spinner that gates paging — is settled here.
+            // have settled — the mode and the spinner that gates paging — is settled here. Before
+            // asking the store: during that wait the dropped load could still land and take over
+            // the page, the total and the loaded mode.
             if currentMode != mode {
                 currentTask?.cancel()
                 currentMode = mode
                 isLoading = false
             }
-            return
+            let expected = loadedEntryCount
+            let indexed = await syncService.indexedCount(mode: mode)
+            // A newer call owns the screen now: the view's task was replaced, or a load started.
+            guard !Task.isCancelled, loadedMode == mode, currentMode == mode else {
+                return
+            }
+            if indexed >= expected {
+                return
+            }
         }
         await loadInitial(mode: mode)
     }
@@ -374,12 +392,22 @@ final class CatalogViewModel {
             if page == 1 {
                 loadedMode = mode
             }
+            // The store replaces a page from its first ordinal on, so this is what it now holds.
+            loadedEntryCount = (page - 1) * perPage + result.received
         } catch {
             guard !Task.isCancelled else {
                 return
             }
             if page == 1 {
+                // A new mode that never landed has no pages of its own: paging on from the
+                // previous mode's page would index it with a gap. A failed refresh of the same
+                // mode keeps its page, since those rows are still indexed.
+                if loadedMode != mode {
+                    currentPage = 0
+                    hasNextPage = true
+                }
                 loadedMode = nil
+                loadedEntryCount = 0
             }
             loadError = error
         }

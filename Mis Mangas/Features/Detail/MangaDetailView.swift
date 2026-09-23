@@ -19,7 +19,7 @@ struct MangaDetailView: View {
                 MangaHeaderView(manga: manga)
                 MangaStatisticsView(volumes: manga.volumes, chapters: manga.chapters)
                 if !manga.authors.isEmpty {
-                    MangaAuthorsView(authors: manga.authors)
+                    MangaAuthorsView(authors: manga.orderedAuthors)
                 }
                 if manga.hasTags {
                     MangaTagsView(demographics: manga.demographics, genres: manga.genres, themes: manga.themes)

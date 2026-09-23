@@ -36,8 +36,10 @@ struct MangaCardView: View {
                     Text(author)
                         .font(.subheadline)
                 }
+                // The star symbol reads as "Favorite" on its own; the label says what it is.
                 Label(manga.formattedScore, systemImage: "star.fill")
                     .font(.caption)
+                    .accessibilityLabel(manga.scoreAccessibilityLabel)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

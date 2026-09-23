@@ -14,11 +14,13 @@ struct MangaTagsView: View {
     let demographics: [String]
     let genres: [String]
     let themes: [String]
+    /// Grows with the text size, so large chips do not read as one block.
+    @ScaledMetric private var chipSpacing: CGFloat = 6
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             DetailSectionTitleView(title: "Tags")
-            FlowLayout(spacing: 6) {
+            FlowLayout(spacing: chipSpacing) {
                 ForEach(demographics, id: \.self) { name in
                     FilterChipView(
                         mode: .byDemographic(name),
