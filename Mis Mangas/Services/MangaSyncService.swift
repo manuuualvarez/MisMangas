@@ -21,7 +21,9 @@ struct MangaSyncService {
 
     /// Fetches one page of `mode` and stores it under `mode.modeKey`. Returns how many items
     /// arrived (so the caller can tell whether a next page exists) and the server total (for the
-    /// header and the page count). Store failures surface as `APIError.unknown`.
+    /// header and the page count). A task cancelled before the page is stored ends as
+    /// `APIError.cancelled` with the store untouched; other store failures surface as
+    /// `APIError.unknown`.
     @discardableResult
     func loadCatalogPage(mode: CatalogMode, page: Int, per: Int) async throws(APIError) -> (received: Int, total: Int) {
         let pageDTO: MangaPageDTO
@@ -47,12 +49,11 @@ struct MangaSyncService {
         case .search(let search):
             pageDTO = try await mangaRepository.customSearch(search, page: page, per: per)
         }
-        // Cancelled while the page was in flight: the caller has moved on, keep the store as it was.
-        guard !Task.isCancelled else {
-            throw .cancelled
-        }
         do {
             try await syncActor.replaceCatalogPage(modeKey: mode.modeKey, page: page, per: per, dtos: pageDTO.items)
+        } catch .cancelled {
+            // Cancelled while the page was in flight or waiting for the actor: the store kept what it had.
+            throw .cancelled
         } catch {
             throw .unknown
         }
@@ -70,6 +71,46 @@ struct MangaSyncService {
     /// screen built on this service, and the error of the first list that failed, if any.
     func loadTaxonomies() async -> (catalog: TaxonomyCatalog, error: APIError?) {
         await taxonomyCache.load()
+    }
+
+    // MARK: - Detail and collection
+
+    /// Stores a manga that arrived outside any catalog page (a deep link, a refreshed detail)
+    /// and returns its id.
+    @discardableResult
+    func cacheDetail(_ dto: MangaDTO) async throws(PersistenceError) -> Int {
+        try await syncActor.cacheDetail(dto)
+    }
+
+    /// Asks the server for the full record of `mangaID` and stores it. Store failures surface as
+    /// `APIError.unknown`.
+    func refreshDetail(mangaID: Int) async throws(APIError) {
+        let dto = try await mangaRepository.fetchManga(id: mangaID)
+        do {
+            try await cacheDetail(dto)
+        } catch {
+            throw .unknown
+        }
+    }
+
+    /// Saves the entry locally and queues its upload; the actor does both in one transaction.
+    func saveCollectionEntry(
+        mangaID: Int,
+        volumesOwned: [Int],
+        readingVolume: Int?,
+        completeCollection: Bool
+    ) async throws(PersistenceError) {
+        try await syncActor.saveCollectionEntry(
+            mangaID: mangaID,
+            volumesOwned: volumesOwned,
+            readingVolume: readingVolume,
+            completeCollection: completeCollection
+        )
+    }
+
+    /// Removes the entry locally and queues its deletion; the actor does both in one transaction.
+    func removeCollectionEntry(mangaID: Int) async throws(PersistenceError) {
+        try await syncActor.removeCollectionEntry(mangaID: mangaID)
     }
 
     /// Start-up maintenance: purges the index first, then the detail records nothing references

@@ -7,11 +7,17 @@
 
 import Foundation
 
-/// Sample catalog for previews: 12 real backend records (ids and covers as the API serves them)
-/// by 11 authors, covering every status. Built once as DTOs, so previews store them through the
-/// same actor as the app and `PreviewMangaRepository` serves them as server pages.
+/// Sample catalog for previews: 14 real backend records (ids and covers as the API serves them)
+/// by 13 authors, covering every status and one series still being published without a volume
+/// count, and a collection of 8 of them. Built once as DTOs, so
+/// previews store them through the same actor as the app and `PreviewMangaRepository` serves them
+/// as server pages.
 enum SampleData {
     static let mangas: [MangaDTO] = Builder().mangas
+
+    /// My collection as `/collection/manga` would serve it: 4 series being read, 3 complete (one
+    /// without a reading volume) and 1 just started at volume 1.
+    static let collection: [UserMangaCollectionDTO] = Builder.collection(of: mangas)
 
     /// The taxonomy lists as `/list/*` would serve them for this sample: every name that appears,
     /// once, in order of first appearance.
@@ -30,19 +36,19 @@ enum SampleData {
             ordered = mangas
         case .best:
             ordered = mangas.sorted { $0.score > $1.score }
-        case .byGenre(let genre):
+        case let .byGenre(genre):
             ordered = mangas.filter { $0.genres.contains { sameName($0.genre, genre) } }
-        case .byTheme(let theme):
+        case let .byTheme(theme):
             ordered = mangas.filter { $0.themes.contains { sameName($0.theme, theme) } }
-        case .byDemographic(let demographic):
+        case let .byDemographic(demographic):
             ordered = mangas.filter { $0.demographics.contains { sameName($0.demographic, demographic) } }
-        case .byAuthor(let id, _):
+        case let .byAuthor(id, _):
             ordered = mangas.filter { $0.authors.contains { $0.id == id } }
-        case .titleContains(let query):
+        case let .titleContains(query):
             ordered = mangas.filter { matches($0.title, query, contains: true) }
-        case .beginsWith(let query):
+        case let .beginsWith(query):
             ordered = mangas.filter { matches($0.title, query, contains: false) }
-        case .search(let search):
+        case let .search(search):
             ordered = mangas.filter { matches($0, search) }
         }
         let start = min(max(page - 1, 0) * per, ordered.count)
@@ -58,7 +64,8 @@ enum SampleData {
         var seen: Set<UUID> = []
         return mangas.flatMap(\.authors).filter { author in
             guard author.firstName.localizedCaseInsensitiveContains(text)
-                || author.lastName.localizedCaseInsensitiveContains(text) else {
+                || author.lastName.localizedCaseInsensitiveContains(text)
+            else {
                 return false
             }
             return seen.insert(author.id).inserted
@@ -122,6 +129,8 @@ enum SampleData {
             let azuma = Self.author("Kiyohiko", "Azuma", .storyAndArt)
             let ohba = Self.author("Tsugumi", "Ohba", .story)
             let obata = Self.author("Takeshi", "Obata", .art)
+            let urasawa = Self.author("Naoki", "Urasawa", .storyAndArt)
+            let hara = Self.author("Yasuhisa", "Hara", .storyAndArt)
 
             mangas = [
                 Self.manga(
@@ -221,6 +230,45 @@ enum SampleData {
                     genres: [.supernatural, .suspense], themes: [.psychological, .detective], demographics: [.shounen],
                     authors: [ohba, obata]
                 ),
+                Self.manga(
+                    id: 1, title: "Monster", english: "Monster", japanese: "MONSTER",
+                    synopsis: "Neurosurgeon Kenzou Tenma saves a boy's life instead of the mayor's, and years later learns the boy has become a killer.",
+                    status: .finished, score: 9.15, start: (1994, 12, 5), end: (2001, 12, 20), chapters: 162, volumes: 18,
+                    cover: "https://cdn.myanimelist.net/images/manga/3/258224l.jpg",
+                    genres: [.awardWinning, .drama, .mystery], themes: [.adultCast, .psychological], demographics: [.seinen],
+                    authors: [urasawa]
+                ),
+                Self.manga(
+                    id: 16765, title: "Kingdom", english: nil, japanese: "キングダム",
+                    synopsis: "Xin, an orphaned slave, swears to become the greatest general under the heavens as the young king Zheng Ying sets out to unify the warring states of China.",
+                    status: .publishing, score: 9, start: (2006, 1, 26), end: nil, chapters: nil, volumes: nil,
+                    cover: "https://cdn.myanimelist.net/images/manga/2/171872l.jpg",
+                    genres: [.action, .awardWinning], themes: [.historical, .military], demographics: [.seinen],
+                    authors: [hara]
+                ),
+            ]
+        }
+
+        static func collection(of mangas: [MangaDTO]) -> [UserMangaCollectionDTO] {
+            let byID = Dictionary(uniqueKeysWithValues: mangas.map { ($0.id, $0) })
+            func entry(_ id: Int, owned: ClosedRange<Int>, reading: Int?, complete: Bool = false) -> UserMangaCollectionDTO {
+                guard let manga = byID[id] else {
+                    preconditionFailure("Manga \(id) is not in the sample")
+                }
+                return UserMangaCollectionDTO(
+                    id: UUID(), manga: manga, volumesOwned: Array(owned),
+                    readingVolume: reading, completeCollection: complete
+                )
+            }
+            return [
+                entry(42, owned: 1 ... 10, reading: 7),
+                entry(13, owned: 1 ... 60, reading: 58),
+                entry(26, owned: 1 ... 20, reading: 15),
+                entry(2, owned: 1 ... 30, reading: 22),
+                entry(1, owned: 1 ... 18, reading: nil, complete: true),
+                entry(21, owned: 1 ... 12, reading: 12, complete: true),
+                entry(33327, owned: 1 ... 14, reading: 9, complete: true),
+                entry(656, owned: 1 ... 1, reading: 1),
             ]
         }
 

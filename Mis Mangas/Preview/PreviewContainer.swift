@@ -8,10 +8,10 @@
 import SwiftData
 import SwiftUI
 
-/// `#Preview(traits: .sampleData)`: an in-memory store filled with `SampleData` through the same
-/// actor as the app, plus `AppDependencies` over that store and a `PreviewMangaRepository` whose
-/// `catalog` behavior the preview picks (`themes` governs `/list/themes` alone). Covers download
-/// from the network, as in the app.
+/// `#Preview(traits: .sampleData)`: an in-memory store filled with `SampleData` (catalog and
+/// collection) through the same actor as the app, plus `AppDependencies` over that store and a
+/// `PreviewMangaRepository` whose `catalog` behavior the preview picks (`themes` governs
+/// `/list/themes` alone). Covers download from the network, as in the app.
 struct PreviewContainer: PreviewModifier {
     var catalog: PreviewMangaRepository.Behavior = .sample
     var themes: PreviewMangaRepository.Behavior = .sample
@@ -22,6 +22,10 @@ struct PreviewContainer: PreviewModifier {
         for mode in [CatalogMode.all, .best] {
             let page = SampleData.page(for: mode, page: 1, per: 20)
             try await actor.replaceCatalogPage(modeKey: mode.modeKey, page: 1, per: 20, dtos: page.items)
+        }
+        // One day apart, so sorting by most recently updated has something to order.
+        for (offset, entry) in SampleData.collection.enumerated() {
+            try await actor.upsertCollectionEntry(from: entry, now: .now.addingTimeInterval(-Double(offset) * 86400))
         }
         return container
     }

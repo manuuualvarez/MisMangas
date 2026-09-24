@@ -13,8 +13,11 @@ import SwiftUI
 /// split view: the catalog leads and the selected manga fills the detail column on iPad; on
 /// iPhone the columns collapse into one
 /// stack and the detail is pushed. A chip in the detail applies its category here: the detail
-/// closes and the mode changes. Each mode change rebuilds the content so its query follows it.
+/// closes and the mode changes; a chip tapped in My Collection arrives as a pending mode and is
+/// applied the same way. Each mode change rebuilds the content so its query follows it.
 struct CatalogView: View {
+    /// A mode another tab left for the catalog to apply (a chip tapped in My Collection).
+    @Binding var pendingMode: CatalogMode?
     @State private var viewModel: CatalogViewModel
     @State private var selectedMode: CatalogMode
     @State private var selectedManga: Manga?
@@ -26,7 +29,12 @@ struct CatalogView: View {
     @AppStorage("catalog.displayMode") private var displayMode: DisplayMode = .grid
     @Namespace private var heroNamespace
 
-    init(syncService: MangaSyncService, mode: CatalogMode = .all) {
+    init(
+        syncService: MangaSyncService,
+        mode: CatalogMode = .all,
+        pendingMode: Binding<CatalogMode?> = .constant(nil)
+    ) {
+        _pendingMode = pendingMode
         _viewModel = State(initialValue: CatalogViewModel(syncService: syncService, mode: mode))
         _selectedMode = State(initialValue: mode)
     }
@@ -134,6 +142,14 @@ struct CatalogView: View {
             // list behind it.
             selectedManga = nil
             AccessibilityNotification.Announcement(String(localized: "Showing \(mode.title)")).post()
+        }
+        // The tab stays alive while another one is shown, so a mode left by another tab is seen
+        // here as a change; `initial` covers a mode left before the catalog first appeared.
+        .onChange(of: pendingMode, initial: true) { _, mode in
+            if let mode {
+                pendingMode = nil
+                modeApplier.apply(mode)
+            }
         }
     }
 

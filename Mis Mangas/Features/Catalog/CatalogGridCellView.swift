@@ -47,6 +47,8 @@ struct CatalogGridCellView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(manga.catalogAccessibilityLabel)
+        // Voice Control users say the title they see, not the whole spoken label.
+        .accessibilityInputLabels([Text(manga.title)])
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
