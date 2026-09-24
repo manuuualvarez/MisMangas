@@ -17,18 +17,30 @@ final class AppDependencies {
     let container: ModelContainer
     let syncActor: MangaSyncActor
     let mangaRepository: any MangaRepository
+    let security: any SecurityData
+    let taxonomyCache: TaxonomyCacheActor
+    /// The guest's service: the collection stays on the device until sign-in.
     let syncService: MangaSyncService
 
-    init(container: ModelContainer, mangaRepository: any MangaRepository) {
+    init(container: ModelContainer, mangaRepository: any MangaRepository, security: any SecurityData = Security()) {
         // Views never save; every write is an explicit `save()` inside `MangaSyncActor`.
         container.mainContext.autosaveEnabled = false
         self.container = container
         self.mangaRepository = mangaRepository
+        self.security = security
         syncActor = MangaSyncActor(modelContainer: container)
-        syncService = MangaSyncService(
+        taxonomyCache = TaxonomyCacheActor(mangaRepository: mangaRepository)
+        syncService = MangaSyncService(syncActor: syncActor, mangaRepository: mangaRepository, taxonomyCache: taxonomyCache)
+    }
+
+    /// The service for a session: signed in, it reaches the user's collection on the server
+    /// through `security`; as a guest, the collection stays on the device.
+    func makeSyncService(authenticated: Bool) -> MangaSyncService {
+        MangaSyncService(
             syncActor: syncActor,
             mangaRepository: mangaRepository,
-            taxonomyCache: TaxonomyCacheActor(mangaRepository: mangaRepository)
+            taxonomyCache: taxonomyCache,
+            collectionRepository: authenticated ? DefaultCollectionRepository(security: security) : nil
         )
     }
 

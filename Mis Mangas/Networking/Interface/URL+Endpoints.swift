@@ -82,6 +82,21 @@ extension URL {
         urlBase.appending(path: "search/author/\(query)")
     }
 
+    // MARK: - Users and session (/users)
+
+    static let createUser = urlBase.appending(path: "users")
+    static let jwtLogin = urlBase.appending(path: "users/jwt/login")
+    static let jwtRefresh = urlBase.appending(path: "users/jwt/refresh")
+    static let jwtMe = urlBase.appending(path: "users/jwt/me")
+
+    // MARK: - Collection (/collection)
+
+    static let collection = urlBase.appending(path: "collection/manga")
+
+    static func collectionItem(id: Int) -> URL {
+        urlBase.appending(path: "collection/manga/\(id)")
+    }
+
     // MARK: - Helpers
 
     /// `page` is 1-based; the app keeps `per` constant during a scroll session.

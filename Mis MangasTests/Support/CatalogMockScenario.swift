@@ -45,6 +45,20 @@ enum CatalogMockScenario {
         case mangasBeginsWith
         case mangasContains
         case customSearch
+        /// `POST /users` (sign up; carries `App-Token`).
+        case createUser
+        /// `POST /users/jwt/login` (Basic credentials).
+        case jwtLogin
+        /// `POST /users/jwt/refresh` (Bearer of the current token).
+        case jwtRefresh
+        /// `GET /users/jwt/me` (Bearer).
+        case jwtMe
+        /// `GET /collection/manga` (Bearer).
+        case collectionList
+        /// `POST /collection/manga` (Bearer; creates or updates one entry).
+        case collectionUpsert
+        /// `DELETE /collection/manga/{id}` (Bearer).
+        case collectionDelete
         /// Cover downloads (`cdn.myanimelist.net`, the CDN every fixture points to).
         case image
         /// A path on the API host that no other key recognises.
@@ -139,8 +153,21 @@ enum CatalogMockScenario {
         var captured: [Key: [CapturedRequest]] = [:]
         /// Held requests per key, oldest first.
         var held: [Key: [HeldRequest]] = [:]
-        /// Tests suspended in `waitUntilHeld(_:)`, resumed when a request of their key is held.
-        var heldWaiters: [Key: [CheckedContinuation<Void, Never>]] = [:]
+        /// Tests suspended in `waitUntilHeld`, resumed when a request of their key is held.
+        var heldWaiters: [Key: [HeldWaiter]] = [:]
+        /// Behaviors that answer the next requests of a key, one each, before its route.
+        var sequences: [Key: [Behavior]] = [:]
+        /// Every recorded request's key, in arrival order.
+        var arrivals: [Key] = []
+        /// Waits whose task finished before they suspended: they return at once.
+        var finishedWaits: Set<UUID> = []
+    }
+
+    /// A test suspended until a request of a key is held. `token` identifies the waits that may
+    /// also end for another reason (`waitUntilHeld(_:orUntilFinished:)`).
+    private struct HeldWaiter {
+        let token: UUID?
+        let continuation: CheckedContinuation<Void, Never>
     }
 
     private static let state = Mutex(State())
@@ -160,7 +187,7 @@ enum CatalogMockScenario {
             return waiters
         }
         for waiter in waiters {
-            waiter.resume()
+            waiter.continuation.resume()
         }
     }
 
@@ -172,9 +199,24 @@ enum CatalogMockScenario {
         state.withLock { $0.routes.merge(routes, uniquingKeysWith: { _, new in new }) }
     }
 
-    /// Read by `URLSessionMockInterface` from inside `startLoading`.
+    /// The next requests of `key` get `behaviors`, one each and in order; after them the key
+    /// answers with its route again (`set(_:_:)`), or 599 without one. Scripts sequences such as
+    /// "503 three times" or "401 on the second call".
+    static func setSequence(_ key: Key, _ behaviors: [Behavior]) {
+        state.withLock { $0.sequences[key] = behaviors }
+    }
+
+    /// Read by `URLSessionMockInterface` from inside `startLoading`, once per request: consumes
+    /// the next scripted behavior of `key`, if any.
     static func behavior(for key: Key) -> Behavior {
-        state.withLock { $0.routes[key] ?? .status(unroutedStatus) }
+        state.withLock { state in
+            if var sequence = state.sequences[key], !sequence.isEmpty {
+                let next = sequence.removeFirst()
+                state.sequences[key] = sequence
+                return next
+            }
+            return state.routes[key] ?? .status(unroutedStatus)
+        }
     }
 
     // MARK: - Recording (mock side)
@@ -183,6 +225,7 @@ enum CatalogMockScenario {
         state.withLock {
             $0.hits[key, default: 0] += 1
             $0.captured[key, default: []].append(CapturedRequest(request: request, body: body))
+            $0.arrivals.append(key)
         }
     }
 
@@ -197,7 +240,7 @@ enum CatalogMockScenario {
             return state.heldWaiters.removeValue(forKey: key) ?? []
         }
         for waiter in waiters {
-            waiter.resume()
+            waiter.continuation.resume()
         }
     }
 
@@ -229,18 +272,60 @@ enum CatalogMockScenario {
     /// its queue with its consumer still there; immediately if one already does. Also returns
     /// when `reset()` runs.
     static func waitUntilHeld(_ key: Key) async {
+        await suspendUntilHeld(key, token: nil)
+    }
+
+    /// Like `waitUntilHeld(_:)`, but also returns as soon as `task` finishes, so a test whose
+    /// code under test never reaches the wire fails instead of hanging. Returns whether a request
+    /// of `key` is held.
+    static func waitUntilHeld<Success: Sendable, Failure: Error>(_ key: Key, orUntilFinished task: Task<Success, Failure>) async -> Bool {
+        let token = UUID()
+        let watcher = Task {
+            _ = await task.result
+            stopWaiting(token: token)
+        }
+        await suspendUntilHeld(key, token: token)
+        watcher.cancel()
+        return isHeld(key)
+    }
+
+    /// Whether a request of `key` is held with its consumer still there.
+    static func isHeld(_ key: Key) -> Bool {
+        state.withLock { $0.held[key]?.contains(where: { !$0.isCancelled }) == true }
+    }
+
+    private static func suspendUntilHeld(_ key: Key, token: UUID?) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let isHeld = state.withLock { state in
                 if state.held[key]?.contains(where: { !$0.isCancelled }) == true {
                     return true
                 }
-                state.heldWaiters[key, default: []].append(continuation)
+                if let token, state.finishedWaits.remove(token) != nil {
+                    return true
+                }
+                state.heldWaiters[key, default: []].append(HeldWaiter(token: token, continuation: continuation))
                 return false
             }
             if isHeld {
                 continuation.resume()
             }
         }
+    }
+
+    /// Resumes the wait registered under `token` if it is suspended; if it has not suspended yet,
+    /// makes it return at once when it does.
+    private static func stopWaiting(token: UUID) {
+        let waiter = state.withLock { state -> HeldWaiter? in
+            for key in state.heldWaiters.keys {
+                guard let index = state.heldWaiters[key]?.firstIndex(where: { $0.token == token }) else {
+                    continue
+                }
+                return state.heldWaiters[key]?.remove(at: index)
+            }
+            state.finishedWaits.insert(token)
+            return nil
+        }
+        waiter?.continuation.resume()
     }
 
     /// Answers the oldest held request of `key` whose consumer is still there with `behavior` and
@@ -269,6 +354,16 @@ enum CatalogMockScenario {
 
     static func hits(_ key: Key) -> Int {
         state.withLock { $0.hits[key] ?? 0 }
+    }
+
+    /// The key of every request since the last `reset()`, in the order they reached the mock.
+    static func arrivals() -> [Key] {
+        state.withLock { $0.arrivals }
+    }
+
+    /// Requests that reached the mock since the last `reset()`, across every key.
+    static func totalHits() -> Int {
+        state.withLock { $0.hits.values.reduce(0, +) }
     }
 
     static func requests(_ key: Key) -> [CapturedRequest] {

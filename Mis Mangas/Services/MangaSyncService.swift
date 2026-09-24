@@ -7,14 +7,34 @@
 
 import Foundation
 
-/// The one place where the network repository meets the store: pulls a catalog page and hands
-/// it to `MangaSyncActor`. Views then read the result through their queries. It also serves the
-/// session's classification lists, which every screen shares through `taxonomyCache`.
+/// The one place where the network repositories meet the store: pulls catalog pages and hands
+/// them to `MangaSyncActor`, and runs the collection's synchronization passes (the queued
+/// changes up, the server collection down). Views then read the result through their queries.
+/// It also serves the session's classification lists, which every screen shares through
+/// `taxonomyCache`.
 struct MangaSyncService {
     let syncActor: MangaSyncActor
     let mangaRepository: any MangaRepository
     /// The classification lists, loaded once per session for every screen built on this service.
     let taxonomyCache: TaxonomyCacheActor
+    /// The user's collection on the server; `nil` for a guest, whose collection stays local.
+    let collectionRepository: (any CollectionRepository)?
+    /// Called once at the end of every synchronization pass that reaches the server snapshot.
+    let onCollectionChanged: (@Sendable () -> Void)?
+
+    init(
+        syncActor: MangaSyncActor,
+        mangaRepository: any MangaRepository,
+        taxonomyCache: TaxonomyCacheActor,
+        collectionRepository: (any CollectionRepository)? = nil,
+        onCollectionChanged: (@Sendable () -> Void)? = nil
+    ) {
+        self.syncActor = syncActor
+        self.mangaRepository = mangaRepository
+        self.taxonomyCache = taxonomyCache
+        self.collectionRepository = collectionRepository
+        self.onCollectionChanged = onCollectionChanged
+    }
 
     /// Retention of index rows and unreferenced detail records.
     static let retentionWindow: TimeInterval = 7 * 24 * 60 * 60
@@ -113,11 +133,137 @@ struct MangaSyncService {
         try await syncActor.removeCollectionEntry(mangaID: mangaID)
     }
 
+    /// One synchronization pass: sends the queued operations oldest first, then applies the
+    /// server collection to the store. A guest gets an empty result without touching the network
+    /// or the queue.
+    ///
+    /// Per operation: accepted → removed from the queue; transport or server failure → retried on
+    /// a later pass and blocked at the third attempt; 401/403 → `.sessionExpired`, leaving the
+    /// rest of the queue untouched; cancelled → the pass stops without marking it; a delete the
+    /// server no longer had → applied; any other refusal → discarded and reported in `rejected`.
+    func synchronizeCollection() async throws(SyncError) -> SyncResult {
+        guard let collectionRepository else {
+            return SyncResult(applied: 0, blocked: 0, rejected: [], upserted: 0, removed: 0)
+        }
+        var applied = 0
+        var blocked = 0
+        var rejected: [Int] = []
+        for operation in try await persistence({ () throws(PersistenceError) in try await syncActor.drainPendingOperations() }) {
+            // A stopped pass sends nothing more: the session may be changing hands.
+            guard !Task.isCancelled else {
+                return SyncResult(applied: applied, blocked: blocked, rejected: rejected, upserted: 0, removed: 0)
+            }
+            let outcome = await send(operation, to: collectionRepository)
+            switch outcome {
+            case .applied:
+                try await persistence { () throws(PersistenceError) in try await syncActor.markOperationCompleted(id: operation.id) }
+                applied += 1
+            case .retry(let category):
+                let isBlocked = try await persistence { () throws(PersistenceError) in
+                    try await syncActor.markOperationFailed(id: operation.id, error: category.rawValue)
+                }
+                if isBlocked {
+                    blocked += 1
+                }
+            case .rejected:
+                try await persistence { () throws(PersistenceError) in try await syncActor.markOperationCompleted(id: operation.id) }
+                rejected.append(operation.mangaID)
+            case .sessionExpired:
+                throw .sessionExpired
+            case .cancelled:
+                return SyncResult(applied: applied, blocked: blocked, rejected: rejected, upserted: 0, removed: 0)
+            }
+        }
+        let remote: [UserMangaCollectionDTO]
+        do {
+            remote = try await collectionRepository.fetchCollection()
+        } catch {
+            switch error {
+            case .unauthorized, .forbidden:
+                throw .sessionExpired
+            default:
+                // The queue is already sent; the snapshot waits for the next pass.
+                return SyncResult(applied: applied, blocked: blocked, rejected: rejected, upserted: 0, removed: 0)
+            }
+        }
+        guard !Task.isCancelled else {
+            return SyncResult(applied: applied, blocked: blocked, rejected: rejected, upserted: 0, removed: 0)
+        }
+        let snapshot = try await persistence { () throws(PersistenceError) in
+            try await syncActor.applyRemoteSnapshot(remote)
+        }
+        onCollectionChanged?()
+        return SyncResult(applied: applied, blocked: blocked, rejected: rejected, upserted: snapshot.upserted, removed: snapshot.removed)
+    }
+
+    /// Author suggestions for the catalog filters, straight from the backend.
+    func searchAuthors(_ query: String) async throws(APIError) -> [AuthorDTO] {
+        try await mangaRepository.searchAuthors(query)
+    }
+
     /// Start-up maintenance: purges the index first, then the detail records nothing references
     /// any more. Never throws: a failed purge only postpones the cleanup.
     func bootstrap() async -> (catalog: Int, details: Int) {
         let catalog = (try? await syncActor.purgeExpiredCatalog(olderThan: Self.retentionWindow)) ?? 0
         let details = (try? await syncActor.purgeExpiredDetailCache(olderThan: Self.retentionWindow)) ?? 0
         return (catalog, details)
+    }
+}
+
+// MARK: - Synchronization helpers
+
+private extension MangaSyncService {
+    /// The only text a failed operation keeps in `lastError`: never a description, a body or a URL.
+    enum RetryCategory: String {
+        case transport
+        case server
+    }
+
+    /// What sending one queued operation meant for the queue.
+    enum SendOutcome {
+        case applied
+        /// Transient failure, recorded only by its category.
+        case retry(RetryCategory)
+        case rejected
+        case sessionExpired
+        case cancelled
+    }
+
+    func send(_ operation: PendingOperationSnapshot, to repository: any CollectionRepository) async -> SendOutcome {
+        do {
+            switch operation.type {
+            case .upsert:
+                guard let payload = operation.payload,
+                      let request = try? JSONDecoder.app.decode(UserMangaCollectionRequest.self, from: payload) else {
+                    return .rejected
+                }
+                try await repository.upsert(request)
+            case .delete:
+                try await repository.delete(mangaID: operation.mangaID)
+            }
+            return .applied
+        } catch {
+            switch error {
+            case .unauthorized, .forbidden:
+                return .sessionExpired
+            case .cancelled:
+                return .cancelled
+            case .notFound where operation.type == .delete:
+                return .applied
+            case .transport:
+                return .retry(.transport)
+            default:
+                return error.isRetryable ? .retry(.server) : .rejected
+            }
+        }
+    }
+
+    /// Runs a store call and reports its failure as `SyncError.persistence`.
+    func persistence<T>(_ body: () async throws(PersistenceError) -> T) async throws(SyncError) -> T {
+        do {
+            return try await body()
+        } catch {
+            throw .persistence(error)
+        }
     }
 }

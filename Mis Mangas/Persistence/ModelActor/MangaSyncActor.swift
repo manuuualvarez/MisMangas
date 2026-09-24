@@ -190,25 +190,34 @@ actor MangaSyncActor {
     // MARK: - Outbox
 
     /// The operations ready to send, oldest first; blocked ones wait for `unblockAll()`. The
-    /// operations stay stored until they are marked completed.
+    /// operations stay stored until they are marked completed. A row whose type this version
+    /// cannot read could never be sent, so it is deleted here instead of lingering in the queue.
     func drainPendingOperations() throws(PersistenceError) -> [PendingOperationSnapshot] {
         try run {
             let ready = FetchDescriptor<PendingOperation>(
                 predicate: #Predicate { $0.blockedAt == nil },
                 sortBy: [SortDescriptor(\.createdAt)]
             )
-            return try modelContext.fetch(ready).compactMap { operation in
+            var snapshots: [PendingOperationSnapshot] = []
+            var hasUnreadable = false
+            for operation in try modelContext.fetch(ready) {
                 guard let type = PendingOperationType(rawValue: operation.operationType) else {
-                    return nil
+                    modelContext.delete(operation)
+                    hasUnreadable = true
+                    continue
                 }
-                return PendingOperationSnapshot(
+                snapshots.append(PendingOperationSnapshot(
                     id: operation.id,
                     type: type,
                     mangaID: operation.mangaID,
                     payload: operation.payload,
                     attempts: operation.attempts
-                )
+                ))
             }
+            if hasUnreadable {
+                try save()
+            }
+            return snapshots
         }
     }
 
@@ -261,6 +270,75 @@ actor MangaSyncActor {
     func pendingMangaIDs() throws(PersistenceError) -> Set<Int> {
         try run {
             Set(try modelContext.fetch(FetchDescriptor<PendingOperation>()).map(\.mangaID))
+        }
+    }
+
+    /// Queued operations still in the drain and blocked ones.
+    func pendingOperationCounts() throws(PersistenceError) -> (pending: Int, blocked: Int) {
+        try run {
+            let pending = try modelContext.fetchCount(FetchDescriptor<PendingOperation>(predicate: #Predicate { $0.blockedAt == nil }))
+            let blocked = try modelContext.fetchCount(FetchDescriptor<PendingOperation>(predicate: #Predicate { $0.blockedAt != nil }))
+            return (pending: pending, blocked: blocked)
+        }
+    }
+
+    /// Deletes every queued operation and leaves the entries as they are.
+    func clearOutbox() throws(PersistenceError) {
+        try run {
+            try modelContext.delete(model: PendingOperation.self)
+            try save()
+        }
+    }
+
+    // MARK: - Server snapshot
+
+    /// Makes the collection match the server's, in one transaction, except for the mangas with a
+    /// queued operation (blocked ones included), whose local intention wins. Upserts every other
+    /// entry with its nested manga and removes every local entry the server no longer has,
+    /// taking its manga out of the collection without queueing anything. An entry whose user
+    /// fields did not change keeps its `updatedAt`. Returns how many entries were written and how
+    /// many were removed: `upserted` counts only the entries created or whose user fields changed.
+    /// Throws `.cancelled` without touching the store when the calling pass was already stopped.
+    func applyRemoteSnapshot(_ dtos: [UserMangaCollectionDTO], now: Date = .now) throws(PersistenceError) -> (upserted: Int, removed: Int) {
+        guard !Task.isCancelled else {
+            throw .cancelled
+        }
+        return try run {
+            let pending = Set(try modelContext.fetch(FetchDescriptor<PendingOperation>()).map(\.mangaID))
+            let incoming = dtos.filter { !pending.contains($0.manga.id) }
+            let authors = try upsertAuthors(incoming.flatMap(\.manga.authors))
+            let mangas = try upsertMangas(incoming.map(\.manga), authors: authors, now: now)
+            var upserted = 0
+            for dto in incoming {
+                guard let manga = mangas[dto.manga.id] else {
+                    continue
+                }
+                let previousUpdate = manga.collectionEntry?.updatedAt
+                let entry = try applyEntry(
+                    to: manga,
+                    volumesOwned: dto.volumesOwned,
+                    readingVolume: dto.readingVolume,
+                    completeCollection: dto.completeCollection,
+                    now: now
+                )
+                // `applyEntry` stamps `updatedAt` only when it creates the entry or changes it.
+                if entry.updatedAt != previousUpdate {
+                    upserted += 1
+                }
+            }
+            let remoteIDs = Set(dtos.map(\.manga.id))
+            var removed = 0
+            for entry in try modelContext.fetch(FetchDescriptor<UserCollectionEntry>())
+            where !remoteIDs.contains(entry.mangaID) && !pending.contains(entry.mangaID) {
+                if let manga = entry.manga, manga.inCollection {
+                    manga.inCollection = false
+                    manga.updatedAt = now
+                }
+                modelContext.delete(entry)
+                removed += 1
+            }
+            try save()
+            return (upserted: upserted, removed: removed)
         }
     }
 }
