@@ -12,6 +12,8 @@ import SwiftUI
 /// toggling on tap. While the count is unknown, a number field stands in: `n` means volumes 1…n.
 struct VolumesPickerView: View {
     @Bindable var draft: CollectionEditorDraft
+    /// Focus of the number field, so the form can put the number pad away.
+    var isEditingNumber: FocusState<Bool>.Binding
 
     /// Cells grow with the text size, so a three-digit number never wraps at accessibility sizes.
     @ScaledMetric(relativeTo: .body) private var cellMinimumWidth = 44.0
@@ -29,7 +31,7 @@ struct VolumesPickerView: View {
                     }
                     .buttonStyle(.volumeCell(isSelected: isOwned))
                     .accessibilityLabel("Volume \(volume)")
-                    .accessibilityValue(isOwned ? "Owned" : "Not owned")
+                    // "Selected" alone says it is owned, as any selectable cell does.
                     .accessibilityAddTraits(isOwned ? .isSelected : [])
                 }
             }
@@ -42,6 +44,7 @@ struct VolumesPickerView: View {
                 TextField("Volumes owned", value: $draft.ownedVolumeCount, format: .number, prompt: Text("None"))
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
+                    .focused(isEditingNumber)
             }
         }
     }
@@ -50,15 +53,17 @@ struct VolumesPickerView: View {
 // Dragon Ball: 42 published volumes, 1–10 owned.
 #Preview("Grid", traits: .sampleData) {
     @Previewable @Query var mangas: [Manga]
+    @Previewable @FocusState var isEditingNumber: Bool
     if let manga = mangas.first(where: { $0.id == 42 }) {
-        Form { VolumesPickerView(draft: CollectionEditorDraft(from: manga)) }
+        Form { VolumesPickerView(draft: CollectionEditorDraft(from: manga), isEditingNumber: $isEditingNumber) }
     }
 }
 
 // Kingdom: still being published, no volume count.
 #Preview("Unknown count", traits: .sampleData) {
     @Previewable @Query var mangas: [Manga]
+    @Previewable @FocusState var isEditingNumber: Bool
     if let manga = mangas.first(where: { $0.id == 16765 }) {
-        Form { VolumesPickerView(draft: CollectionEditorDraft(from: manga)) }
+        Form { VolumesPickerView(draft: CollectionEditorDraft(from: manga), isEditingNumber: $isEditingNumber) }
     }
 }

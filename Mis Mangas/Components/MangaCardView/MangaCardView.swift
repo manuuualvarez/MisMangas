@@ -45,6 +45,9 @@ struct MangaCardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(manga.catalogAccessibilityLabel)
+        // A selectable list row opens the manga, as a grid cell does; VoiceOver reported it
+        // as plain text until it said so.
+        .accessibilityAddTraits(.isButton)
     }
 }
 

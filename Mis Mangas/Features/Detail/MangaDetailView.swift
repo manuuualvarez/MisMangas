@@ -115,6 +115,8 @@ struct MangaDetailView: View {
         isShowingRefreshError = viewModel.refreshError != nil
         if let description = viewModel.refreshError?.errorDescription {
             AccessibilityNotification.Announcement(description).post()
+        } else {
+            AccessibilityNotification.Announcement(String(localized: "Updated")).post()
         }
     }
 }

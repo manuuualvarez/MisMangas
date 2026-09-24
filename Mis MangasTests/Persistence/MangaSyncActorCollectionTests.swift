@@ -223,6 +223,65 @@ struct MangaSyncActorCollectionTests {
         ))
     }
 
+    // The store keeps volume numbers within 1…300 whatever the caller passes, the form or the
+    // server: 300 leaves room for the longest series in print (about 200 volumes) while a
+    // runaway count cannot fill the shared store, the widget or the upload payload.
+
+    @Test func `Saving volumes and a reading volume outside 1 to 300 stores and queues them within that range`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        _ = try await actor.cacheDetail(monster, now: Self.t1)
+
+        try await actor.saveCollectionEntry(
+            mangaID: Self.monsterID,
+            volumesOwned: [-1, 0, 1, 2, 300, 301, Int.max],
+            readingVolume: Int.max,
+            completeCollection: false,
+            now: Self.t2
+        )
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let entry = try #require(try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context).first)
+        #expect(entry.volumesOwned == [1, 2, 300])
+        #expect(entry.readingVolume == 300)
+        let operation = try #require(try PersistenceTestSupport.fetchAll(PendingOperation.self, in: context).first)
+        #expect(try Self.request(in: operation.payload) == UserMangaCollectionRequest(
+            manga: Self.monsterID,
+            completeCollection: false,
+            volumesOwned: [1, 2, 300],
+            readingVolume: 300
+        ))
+    }
+
+    @Test func `Saving a reading volume of zero or below stores no reading volume`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        _ = try await actor.cacheDetail(monster, now: Self.t1)
+
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: -5, completeCollection: false, now: Self.t2)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let entry = try #require(try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context).first)
+        #expect(entry.readingVolume == nil)
+    }
+
+    @Test func `Upserting from a server DTO with volumes outside 1 to 300 stores them within that range`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        let fixture = try #require(try Self.serverEntries().first)
+        let dto = UserMangaCollectionDTO(
+            id: fixture.id,
+            manga: fixture.manga,
+            volumesOwned: [0, 5, 1_000],
+            readingVolume: 0,
+            completeCollection: fixture.completeCollection
+        )
+
+        try await actor.upsertCollectionEntry(from: dto, now: Self.t1)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let entry = try #require(try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context).first)
+        #expect(entry.volumesOwned == [5])
+        #expect(entry.readingVolume == nil)
+    }
+
     @Test func `Saving the same manga again updates its only entry, keeps the creation date and replaces the queued upsert`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)

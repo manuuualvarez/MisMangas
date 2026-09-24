@@ -210,6 +210,23 @@ extension Manga {
         }
     }
 
+    /// The progress of `collectionProgressText` without the abbreviation, for VoiceOver:
+    /// "Reading volume 7 of 42", "Reading volume 7", or how many volumes are owned.
+    var collectionProgressAccessibilityLabel: String? {
+        guard let entry = collectionEntry else {
+            return nil
+        }
+        switch (entry.readingVolume, volumes) {
+        case let (reading?, total?):
+            return String(localized: "Reading volume \(reading) of \(total)")
+        case let (reading?, nil):
+            return String(localized: "Reading volume \(reading)")
+        case (nil, _):
+            // No abbreviation to spell out.
+            return collectionProgressText
+        }
+    }
+
     /// What VoiceOver reads for a catalog row or cell: title, first author (when there is one)
     /// and score, or that it has none.
     var catalogAccessibilityLabel: String {

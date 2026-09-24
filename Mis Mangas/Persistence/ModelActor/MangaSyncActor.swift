@@ -21,7 +21,13 @@ actor MangaSyncActor {
     /// replaces the index rows of the mode from `(page - 1) * per` onwards. Page 1 therefore
     /// replaces the whole mode, and loading the same page twice never duplicates anything.
     /// `now` is stamped on `cachedAt`, `updatedAt` and `fetchedAt`.
+    /// Throws `.cancelled` without touching the store when the calling task was cancelled before
+    /// the write started: its caller has moved on, and the page would only leave rows no screen
+    /// shows. A cancellation that arrives during the write does not undo it.
     func replaceCatalogPage(modeKey: String, page: Int, per: Int, dtos: [MangaDTO], now: Date = .now) throws(PersistenceError) {
+        guard !Task.isCancelled else {
+            throw .cancelled
+        }
         let start = (page - 1) * per
         try run {
             let stale = FetchDescriptor<CatalogEntry>(
@@ -348,7 +354,11 @@ private extension MangaSyncActor {
         now: Date
     ) throws -> UserCollectionEntry {
         let mangaID = manga.id
-        let volumes = Set(volumesOwned).sorted()
+        // Whatever the caller passes, the form or the server: volumes within 1…limit, and a
+        // reading volume of 0 or below means none.
+        let limit = UserCollectionEntry.volumeLimit
+        let volumes = Set(volumesOwned.filter { (1 ... limit).contains($0) }).sorted()
+        let readingVolume = readingVolume.flatMap { $0 > 0 ? min($0, limit) : nil }
         let entry: UserCollectionEntry
         if let existing = try fetchOne(#Predicate<UserCollectionEntry> { $0.mangaID == mangaID }) {
             entry = existing

@@ -21,7 +21,9 @@ struct MangaSyncService {
 
     /// Fetches one page of `mode` and stores it under `mode.modeKey`. Returns how many items
     /// arrived (so the caller can tell whether a next page exists) and the server total (for the
-    /// header and the page count). Store failures surface as `APIError.unknown`.
+    /// header and the page count). A task cancelled before the page is stored ends as
+    /// `APIError.cancelled` with the store untouched; other store failures surface as
+    /// `APIError.unknown`.
     @discardableResult
     func loadCatalogPage(mode: CatalogMode, page: Int, per: Int) async throws(APIError) -> (received: Int, total: Int) {
         let pageDTO: MangaPageDTO
@@ -47,12 +49,11 @@ struct MangaSyncService {
         case .search(let search):
             pageDTO = try await mangaRepository.customSearch(search, page: page, per: per)
         }
-        // Cancelled while the page was in flight: the caller has moved on, keep the store as it was.
-        guard !Task.isCancelled else {
-            throw .cancelled
-        }
         do {
             try await syncActor.replaceCatalogPage(modeKey: mode.modeKey, page: page, per: per, dtos: pageDTO.items)
+        } catch .cancelled {
+            // Cancelled while the page was in flight or waiting for the actor: the store kept what it had.
+            throw .cancelled
         } catch {
             throw .unknown
         }

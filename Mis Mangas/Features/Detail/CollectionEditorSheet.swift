@@ -17,6 +17,8 @@ struct CollectionEditorSheet: View {
     @State private var viewModel: CollectionViewModel
     @State private var draft: CollectionEditorDraft
     @State private var isConfirmingRemoval = false
+    /// The number pad has no key to put it away: the keyboard toolbar offers "Done".
+    @FocusState private var isEditingNumber: Bool
     @Environment(\.dismiss) private var dismiss
 
     init(manga: Manga, syncService: MangaSyncService) {
@@ -29,7 +31,7 @@ struct CollectionEditorSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    VolumesPickerView(draft: draft)
+                    VolumesPickerView(draft: draft, isEditingNumber: $isEditingNumber)
                 } header: {
                     Text("Volumes owned")
                 } footer: {
@@ -40,21 +42,20 @@ struct CollectionEditorSheet: View {
                 Section("Reading") {
                     if let count = draft.volumesCount, count > 0 {
                         Stepper(value: $draft.readingVolumeSelection, in: 0 ... count) {
-                            LabeledContent("Reading volume") {
-                                if let reading = draft.readingVolume {
-                                    Text(reading, format: .number)
-                                } else {
-                                    Text("Not started")
-                                }
-                            }
+                            ReadingVolumeLabel(readingVolume: draft.readingVolume)
                         }
-                        .accessibilityLabel("Reading volume")
-                        .accessibilityValue(draft.readingVolume.map { $0.formatted() } ?? String(localized: "Not started"))
+                        // A stepper builds its accessible name from every text in its label, the
+                        // value included, so VoiceOver read the value twice: it gets a plain one.
+                        .accessibilityRepresentation {
+                            Stepper("Reading volume", value: $draft.readingVolumeSelection, in: 0 ... count)
+                                .accessibilityValue(draft.readingVolume.map { $0.formatted() } ?? String(localized: "Not started"))
+                        }
                     } else {
                         LabeledContent("Reading volume") {
                             TextField("Reading volume", value: $draft.readingVolume, format: .number, prompt: Text("Not started"))
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.trailing)
+                                .focused($isEditingNumber)
                         }
                     }
                 }
@@ -92,6 +93,10 @@ struct CollectionEditorSheet: View {
                     }
                     .disabled(viewModel.isSaving)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { isEditingNumber = false }
+                }
             }
             .confirmationDialog("Remove from collection?", isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
                 Button("Remove", role: .destructive) {
@@ -100,12 +105,6 @@ struct CollectionEditorSheet: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Your volumes and reading progress for this manga will be deleted.")
-            }
-            // The error row appears below the fold, so assistive technologies hear it as it lands.
-            .onChange(of: viewModel.error?.errorDescription) { _, description in
-                if let description {
-                    AccessibilityNotification.Announcement(description).post()
-                }
             }
         }
         .presentationDetents([.large])
@@ -120,14 +119,20 @@ struct CollectionEditorSheet: View {
             readingVolume: values.readingVolume,
             completeCollection: values.completeCollection
         )
-        if viewModel.error == nil {
-            dismiss()
-        }
+        finish()
     }
 
     private func remove() async {
         await viewModel.remove(mangaID: manga.id)
-        if viewModel.error == nil {
+        finish()
+    }
+
+    /// Closes the sheet after a write that succeeded. A failure is announced on every attempt,
+    /// even when a retry fails with the same error: the error row appears below the fold.
+    private func finish() {
+        if let description = viewModel.error?.errorDescription {
+            AccessibilityNotification.Announcement(description).post()
+        } else {
             dismiss()
         }
     }

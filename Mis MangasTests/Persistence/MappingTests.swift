@@ -361,6 +361,29 @@ struct MappingTests {
         #expect(manga.collectionAccessibilityLabel == "Dragon Ball, 1 volume owned")
     }
 
+    // MARK: - Collection progress label
+
+    @Test(arguments: [
+        (42 as Int?, 7 as Int?, "Reading volume 7 of 42"),
+        (nil, 7, "Reading volume 7"),
+        (42, nil, "3 volumes owned"),
+    ])
+    func `collectionProgressAccessibilityLabel spells out the progress the detail abbreviates`(
+        volumes: Int?, reading: Int?, expected: String
+    ) throws {
+        let manga = try JSONDecoder.app.decode(MangaDTO.self, from: Self.mangaJSON()).makeManga()
+        manga.volumes = volumes
+        manga.collectionEntry = UserCollectionEntry(mangaID: manga.id, volumesOwned: [1, 2, 3], readingVolume: reading)
+
+        #expect(manga.collectionProgressAccessibilityLabel == expected)
+    }
+
+    @Test func `collectionProgressAccessibilityLabel is nil outside the collection`() throws {
+        let manga = try JSONDecoder.app.decode(MangaDTO.self, from: Self.mangaJSON()).makeManga()
+
+        #expect(manga.collectionProgressAccessibilityLabel == nil)
+    }
+
     // MARK: - Inline fixture (shape from the backend OpenAPI)
 
     private static func mangaJSON(

@@ -366,4 +366,66 @@ struct MangaSyncActorTests {
         let context = PersistenceTestSupport.freshContext(container)
         #expect(try PersistenceTestSupport.mangasByID(in: context).map(\.id) == [keptID])
     }
+
+    // MARK: - Cancellation
+
+    @Test func `A page written by a task cancelled before it reached the actor throws cancelled and indexes nothing`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+
+        let result = await Self.replaceAfterCancelling(actor, modeKey: "best", dtos: bestPage1)
+
+        let error = #expect(throws: PersistenceError.self) { try result.get() }
+        if let error {
+            #expect(Self.isCancelled(error), "Expected PersistenceError.cancelled, got \(error)")
+        }
+        let context = PersistenceTestSupport.freshContext(container)
+        #expect(try PersistenceTestSupport.catalogEntries(modeKey: "best", in: context).isEmpty)
+        #expect(try PersistenceTestSupport.fetchAll(Manga.self, in: context).isEmpty)
+    }
+
+    @Test func `A cancelled page write keeps the index the mode already had and inserts none of its mangas`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+
+        // Page 1 again, but with mangas the store has never seen: had it been written, it would
+        // replace every entry of the mode and add 20 mangas.
+        let result = await Self.replaceAfterCancelling(actor, modeKey: "all", dtos: allPage2)
+
+        let error = #expect(throws: PersistenceError.self) { try result.get() }
+        if let error {
+            #expect(Self.isCancelled(error), "Expected PersistenceError.cancelled, got \(error)")
+        }
+        let context = PersistenceTestSupport.freshContext(container)
+        let entries = try PersistenceTestSupport.catalogEntries(modeKey: "all", in: context)
+        #expect(entries.map(\.ordinal) == Array(0 ..< 20))
+        #expect(entries.compactMap(\.manga?.id) == allPage1.map(\.id))
+        #expect(try PersistenceTestSupport.mangasByID(in: context).map(\.id) == allPage1.map(\.id).sorted())
+    }
+
+    /// Calls `replaceCatalogPage` for page 1 of `modeKey` from an unstructured task that is already
+    /// cancelled when it reaches the actor, and returns how that call ended. The task first waits
+    /// for a signal the test sends only after `cancel()`; the wait ends on that signal or on the
+    /// cancellation itself, both of which come after `cancel()`, so the order holds without sleeping.
+    private static func replaceAfterCancelling(
+        _ actor: MangaSyncActor,
+        modeKey: String,
+        dtos: [MangaDTO]
+    ) async -> Result<Void, any Error> {
+        let (signal, emit) = AsyncStream.makeStream(of: Void.self)
+        let write = Task {
+            for await _ in signal {
+                break
+            }
+            try await actor.replaceCatalogPage(modeKey: modeKey, page: 1, per: 20, dtos: dtos)
+        }
+        write.cancel()
+        emit.yield()
+        emit.finish()
+        return await write.result
+    }
+
+    /// `PersistenceError` carries `any Error` payloads and is not `Equatable`: match the case.
+    private static func isCancelled(_ error: PersistenceError) -> Bool {
+        if case .cancelled = error { true } else { false }
+    }
 }

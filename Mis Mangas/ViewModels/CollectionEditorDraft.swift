@@ -25,8 +25,9 @@ final class CollectionEditorDraft {
         }
     }
 
-    /// Published volumes; `nil` while the manga is still being published, and then the reader
-    /// types the volumes and the reading volume freely.
+    /// Published volumes, up to `UserCollectionEntry.volumeLimit`; `nil` while the manga is still
+    /// being published, and then the reader types the volumes and the reading volume freely
+    /// within that limit.
     let volumesCount: Int?
 
     /// The reading volume as a stepper drives it: `0` stands for "not started", so one step down
@@ -42,7 +43,7 @@ final class CollectionEditorDraft {
         get { volumesOwned.isEmpty ? nil : volumesOwned.count }
         set {
             if let newValue, newValue > 0 {
-                volumesOwned = Set(1 ... newValue)
+                volumesOwned = Set(1 ... min(newValue, UserCollectionEntry.volumeLimit))
             } else {
                 volumesOwned = []
             }
@@ -50,7 +51,7 @@ final class CollectionEditorDraft {
     }
 
     init(from manga: Manga) {
-        volumesCount = manga.volumes
+        volumesCount = manga.volumes.map { min($0, UserCollectionEntry.volumeLimit) }
         let entry = manga.collectionEntry
         volumesOwned = Set(entry?.volumesOwned ?? [])
         readingVolume = entry?.readingVolume
@@ -71,11 +72,15 @@ final class CollectionEditorDraft {
     }
 
     /// The values to save: volumes ascending, and the reading volume kept within 1…`volumesCount`
-    /// when the count is known (the server may have lowered it since the entry was stored).
+    /// when the count is known (the server may have lowered it since the entry was stored). A
+    /// free reading volume stays within 1…`UserCollectionEntry.volumeLimit`, and 0 or below
+    /// means none.
     func validated() -> (volumesOwned: [Int], readingVolume: Int?, completeCollection: Bool) {
         var reading = readingVolume
         if let current = reading, let volumesCount, volumesCount > 0 {
             reading = min(max(current, 1), volumesCount)
+        } else if let current = reading {
+            reading = current > 0 ? min(current, UserCollectionEntry.volumeLimit) : nil
         }
         return (volumesOwned.sorted(), reading, completeCollection)
     }

@@ -36,6 +36,9 @@ struct InlineErrorView: View {
                 retry()
             }
             .buttonStyle(.bordered)
+            // Over the gray fill of a bordered button the accent falls below 4.5:1 in dark mode;
+            // the primary label color stays legible in every appearance.
+            .foregroundStyle(.primary)
             .controlSize(.large)
         }
         .padding(.vertical, 4)

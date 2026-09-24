@@ -197,4 +197,43 @@ struct CollectionEditorDraftTests {
 
         #expect(draft.volumesOwned == owned)
     }
+
+    // MARK: - Volume limit
+
+    // The form never lets a volume number above 300 through. The longest manga series in print
+    // run to about 200 volumes (Kochikame ended at 201), so 300 leaves room for any real
+    // collection. Without a limit, a mistyped or pasted count such as 999999999999 builds a set of
+    // that many numbers: the app hangs, and a count it survives lands in the shared store, which
+    // the collection, the widget and the upload payload then load on every launch.
+
+    @Test func `A typed volume count above 300 owns volumes 1 through 300`() {
+        let draft = CollectionEditorDraft(from: Self.dragonBall(volumes: nil))
+
+        draft.ownedVolumeCount = 100_000
+
+        #expect(draft.volumesOwned == Set(1 ... 300))
+    }
+
+    @Test func `Marking complete a manga listed with more than 300 volumes owns volumes 1 through 300`() {
+        let draft = CollectionEditorDraft(from: Self.dragonBall(volumes: 100_000))
+
+        draft.toggleComplete()
+
+        #expect(draft.volumesOwned == Set(1 ... 300))
+    }
+
+    @Test(arguments: [
+        (-3, nil),
+        (0, nil),
+        (150, 150),
+        (300, 300),
+        (301, 300),
+        (Int.max, 300),
+    ] as [(Int, Int?)])
+    func `validated keeps a free reading volume between 1 and 300 and clears zero or below`(reading: Int, expected: Int?) {
+        let draft = CollectionEditorDraft(from: Self.dragonBall(volumes: nil))
+        draft.readingVolume = reading
+
+        #expect(draft.validated().readingVolume == expected)
+    }
 }

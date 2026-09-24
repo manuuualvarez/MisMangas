@@ -45,6 +45,35 @@ struct CollectionFilteringTests {
         #expect(filtered.map(\.id).sorted() == expectedIDs)
     }
 
+    // MARK: - Filter announcement
+
+    @Test(arguments: [
+        (CollectionFilter.all, "8 mangas"),
+        (CollectionFilter.reading, "5 mangas"),
+        (CollectionFilter.complete, "3 mangas"),
+    ])
+    func `The filter announcement says how many mangas the filter leaves on screen`(filter: CollectionFilter, expected: String) async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await Self.seedSampleCollection(actor)
+        let collection = try Self.collection(in: PersistenceTestSupport.freshContext(container))
+
+        #expect(collection.filterAnnouncement(for: filter) == expected)
+    }
+
+    @Test func `The filter announcement of a single manga is singular`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await actor.upsertCollectionEntry(from: UserMangaCollectionDTO(
+            id: UUID(), manga: try Self.sampleManga(id: Self.drSlumpID), volumesOwned: [1], readingVolume: nil, completeCollection: true
+        ))
+        let collection = try Self.collection(in: PersistenceTestSupport.freshContext(container))
+
+        #expect(collection.filterAnnouncement(for: .complete) == "1 manga")
+    }
+
+    @Test func `The filter announcement of a filter that leaves nothing says no mangas match`() {
+        #expect([Manga]().filterAnnouncement(for: .reading) == "No mangas match")
+    }
+
     // MARK: - Sort
 
     @Test(arguments: [

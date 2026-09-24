@@ -39,4 +39,14 @@ extension Array<Manga> {
             self.filter { $0.collectionEntry?.completeCollection == true }
         }
     }
+
+    /// What VoiceOver announces after `filter` is chosen: how many mangas it leaves on screen.
+    func filterAnnouncement(for filter: CollectionFilter) -> String {
+        let count = filtered(by: filter).count
+        guard count > 0 else {
+            return String(localized: "No mangas match")
+        }
+        // Grammar agreement ("1 manga" / "2 mangas") is only applied to attributed strings.
+        return String(AttributedString(localized: "^[\(count) manga](inflect: true)").characters)
+    }
 }

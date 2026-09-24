@@ -56,6 +56,11 @@ struct CollectionRowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(manga.collectionAccessibilityLabel)
+        // Voice Control users say the title they see, not the whole spoken label.
+        .accessibilityInputLabels([Text(manga.title)])
+        // A selectable list row opens the manga, as a grid cell does; VoiceOver reported it
+        // as plain text until it said so.
+        .accessibilityAddTraits(.isButton)
     }
 }
 

@@ -19,8 +19,11 @@ struct MangaCollectionStatusView: View {
             Label {
                 if entry.completeCollection {
                     Text("Complete collection")
-                } else if let progress = manga.collectionProgressText {
+                } else if let progress = manga.collectionProgressText,
+                          let spokenProgress = manga.collectionProgressAccessibilityLabel {
+                    // "Vol." is read letter by letter: VoiceOver gets the words.
                     Text(progress)
+                        .accessibilityLabel(spokenProgress)
                 }
             } icon: {
                 if entry.completeCollection {

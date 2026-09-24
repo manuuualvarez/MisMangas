@@ -59,6 +59,7 @@ struct MyCollectionView: View {
                             selectedTab = .catalog
                         }
                         .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                     }
                 } else if visibleMangas.isEmpty {
                     ContentUnavailableView {
@@ -66,9 +67,12 @@ struct MyCollectionView: View {
                     } description: {
                         Text("No manga in your collection matches this filter.")
                     } actions: {
+                        // The default style of this view is a bare link about 18 pt tall.
                         Button("Show all") {
                             filter = .all
                         }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                     }
                 } else {
                     switch displayMode {
@@ -146,6 +150,10 @@ struct MyCollectionView: View {
             if column == .sidebar {
                 selectedManga = nil
             }
+        }
+        // Focus goes back to the menu, which only names the filter: say what it left on screen.
+        .onChange(of: filter) { _, newFilter in
+            AccessibilityNotification.Announcement(mangas.filterAnnouncement(for: newFilter)).post()
         }
     }
 }

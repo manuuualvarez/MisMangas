@@ -21,6 +21,13 @@ final class UserCollectionEntry {
     var updatedAt: Date
     var manga: Manga?
 
+    /// The highest volume number an entry keeps. The longest manga series in print run to about
+    /// 200 volumes (Kochikame ended at 201), so 300 leaves room for any real collection, while a
+    /// mistyped, pasted or corrupt count can no longer build millions of volume numbers that hang
+    /// the app and then load with the collection, the widget and the upload payload on every
+    /// launch.
+    static let volumeLimit = 300
+
     init(
         id: UUID = UUID(),
         mangaID: Int,

@@ -47,15 +47,18 @@ struct CollectionListView: View {
             }
         }
         .listStyle(.plain)
-        .confirmationDialog(
+        // An alert, centered: a confirmation dialog from the list becomes a popover on iPad that
+        // points at the list, over the detail of another manga, and one presented from the row
+        // itself never appears after the swipe and leaves the list out of step with its rows.
+        .alert(
             "Remove from collection?",
             isPresented: $isConfirmingRemoval,
-            titleVisibility: .visible,
             presenting: mangaPendingRemoval
         ) { manga in
             Button("Remove", role: .destructive) {
                 remove(manga)
             }
+            Button("Cancel", role: .cancel) {}
         } message: { manga in
             Text("\(manga.title) and its volumes will leave your collection.")
         }
