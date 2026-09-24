@@ -38,6 +38,9 @@ final class URLSessionMockInterface: URLProtocol {
         return URLSession(configuration: configuration)
     }
 
+    /// Key under which this instance waits in its thread's dictionary while `.held`; `nil` otherwise.
+    private var heldToken: String?
+
     // MARK: - URLProtocol
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -59,7 +62,14 @@ final class URLSessionMockInterface: URLProtocol {
         apply(CatalogMockScenario.behavior(for: key), to: url)
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        guard let heldToken else {
+            return
+        }
+        self.heldToken = nil
+        Thread.current.threadDictionary.removeObject(forKey: heldToken)
+        CatalogMockScenario.cancelHeld(token: heldToken)
+    }
 
     // MARK: - Routing
 
@@ -132,7 +142,38 @@ final class URLSessionMockInterface: URLProtocol {
             // this sleep: `URLSession` resumes the continuation with `URLError.cancelled` immediately.
             Thread.sleep(forTimeInterval: Self.timeInterval(duration))
             apply(then, to: url)
+        case .held:
+            hold(url)
         }
+    }
+
+    /// Parks this instance in the loading thread's dictionary and returns at once: that thread
+    /// serves every mock response, so blocking it would stop the next request from going out.
+    /// `CatalogMockScenario` only keeps the token and the thread's run loop, and the answer
+    /// comes back through `deliverHeld(token:behavior:)` on this same thread, so the instance is
+    /// never touched from another one.
+    private func hold(_ url: URL) {
+        let token = "URLSessionMockInterface.held.\(UUID().uuidString)"
+        heldToken = token
+        Thread.current.threadDictionary[token] = self
+        CatalogMockScenario.hold(Self.route(method: request.httpMethod ?? "GET", url: url), token: token)
+    }
+
+    /// Answers the request parked under `token` with `behavior`. Runs on the run loop of the thread
+    /// that parked it; a request whose load was stopped meanwhile is no longer there and gets
+    /// nothing.
+    static func deliverHeld(token: String, behavior: CatalogMockScenario.Behavior) {
+        let parked = Thread.current.threadDictionary
+        guard let instance = parked[token] as? URLSessionMockInterface else {
+            return
+        }
+        parked.removeObject(forKey: token)
+        instance.heldToken = nil
+        guard let url = instance.request.url else {
+            instance.fail(URLError(.badURL))
+            return
+        }
+        instance.apply(behavior, to: url)
     }
 
     private static func timeInterval(_ duration: Duration) -> TimeInterval {

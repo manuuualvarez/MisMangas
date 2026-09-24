@@ -344,23 +344,28 @@ extension SharedMockSuites {
             #expect(viewModel.suggestionsKey == "begins:drago")
         }
 
-        @Test func `A suggestions response arriving after the text changed never reaches the store`() async throws {
-            CatalogMockScenario.set(.mangasBeginsWith, .delayed(for: .milliseconds(300), then: .fixture("mangas_begins_dra.json")))
+        @Test(.timeLimit(.minutes(1)))
+        func `A suggestions response arriving after the text changed never reaches the store`() async throws {
             let ballItems = try PersistenceTestSupport.pageItems("mangas_contains_ball.json")
+            CatalogMockScenario.set(.mangasBeginsWith, .held)
 
             viewModel.updateSearchText("dra")
-            // Past the debounce: the "dra" request is on the wire and its response is still in flight.
-            try await Task.sleep(for: .milliseconds(350))
+            let draTask = viewModel.suggestionsTask
+            // Past the debounce: the "dra" request reached the wire and its response is in flight.
+            await CatalogMockScenario.waitUntilHeld(.mangasBeginsWith)
+
             try CatalogMockScenario.set(.mangasBeginsWith, .data(encodedList(ballItems)))
             viewModel.updateSearchText("ball")
-            // After "ball" settled, wait past the mock delay: a late "dra" response would have landed by now.
             await viewModel.suggestionsTask?.value
-            try await Task.sleep(for: .milliseconds(400))
+
+            // The "dra" response lands only now, after "ball" settled.
+            CatalogMockScenario.release(.mangasBeginsWith, with: .fixture("mangas_begins_dra.json"))
+            await draTask?.value
 
             let requests = CatalogMockScenario.requests(.mangasBeginsWith)
-            #expect((1 ... 2).contains(requests.count))
-            #expect(requests.last?.path == "/search/mangasBeginsWith/ball")
+            #expect(requests.map(\.path) == ["/search/mangasBeginsWith/dra", "/search/mangasBeginsWith/ball"])
             #expect(viewModel.suggestionsKey == "begins:ball")
+            #expect(viewModel.searchError == nil)
 
             let context = PersistenceTestSupport.freshContext(container)
             #expect(try PersistenceTestSupport.catalogEntries(modeKey: "begins:dra", in: context).isEmpty)
@@ -462,6 +467,139 @@ extension SharedMockSuites {
 
             viewModel.searchAuthors("t")
             #expect(!viewModel.hasAuthorQuery)
+        }
+
+        // MARK: - Scope changes with responses in flight
+
+        // The screen calls `search(_:)` with the text still in the field every time the scope
+        // changes; these tests drive the view model the same way.
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A late titles failure after switching to Authors shows no error and keeps the authors`() async {
+            CatalogMockScenario.set([
+                .mangasBeginsWith: .held,
+                .searchAuthor: .fixture("authors_toriyama.json"),
+            ])
+            viewModel.searchScope = .titles
+            viewModel.search("dra")
+            let titlesTask = viewModel.suggestionsTask
+            await CatalogMockScenario.waitUntilHeld(.mangasBeginsWith)
+
+            viewModel.searchScope = .authors
+            viewModel.search("toriya")
+            await viewModel.authorTask?.value
+
+            CatalogMockScenario.release(.mangasBeginsWith, with: .status(500))
+            await titlesTask?.value
+
+            #expect(viewModel.searchError == nil)
+            #expect(viewModel.authorResults.count == 6)
+            #expect(viewModel.suggestionsKey == nil)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A late authors failure after switching to Titles shows no error and keeps the suggestions`() async {
+            CatalogMockScenario.set([
+                .searchAuthor: .held,
+                .mangasBeginsWith: .fixture("mangas_begins_dra.json"),
+            ])
+            viewModel.searchScope = .authors
+            viewModel.search("toriya")
+            let authorsTask = viewModel.authorTask
+            await CatalogMockScenario.waitUntilHeld(.searchAuthor)
+
+            viewModel.searchScope = .titles
+            viewModel.search("dra")
+            await viewModel.suggestionsTask?.value
+            // The abandoned author lookup no longer counts as in flight once Titles owns the field.
+            #expect(!viewModel.isSearchingAuthors)
+
+            CatalogMockScenario.release(.searchAuthor, with: .status(500))
+            await authorsTask?.value
+
+            #expect(viewModel.searchError == nil)
+            #expect(viewModel.suggestionsKey == "begins:dra")
+            #expect(!viewModel.isSearchingAuthors)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A late titles success does not clear the failure of the Authors scope nor fill the index`() async throws {
+            CatalogMockScenario.set([
+                .mangasBeginsWith: .held,
+                .searchAuthor: .status(500),
+            ])
+            viewModel.searchScope = .titles
+            viewModel.search("dra")
+            let titlesTask = viewModel.suggestionsTask
+            await CatalogMockScenario.waitUntilHeld(.mangasBeginsWith)
+
+            viewModel.searchScope = .authors
+            viewModel.search("toriya")
+            await viewModel.authorTask?.value
+            let shown = try #require(viewModel.searchError)
+            expectAPIError(.serverError, matches: shown)
+
+            CatalogMockScenario.release(.mangasBeginsWith, with: .fixture("mangas_begins_dra.json"))
+            await titlesTask?.value
+
+            let failure = try #require(viewModel.searchError)
+            expectAPIError(.serverError, matches: failure)
+            #expect(viewModel.suggestionsKey == nil)
+            let context = PersistenceTestSupport.freshContext(container)
+            #expect(try PersistenceTestSupport.catalogEntries(modeKey: "begins:dra", in: context).isEmpty)
+        }
+
+        @Test func `A titles failure is not carried over to the Authors scope`() async throws {
+            CatalogMockScenario.set([
+                .mangasBeginsWith: .status(500),
+                .searchAuthor: .fixture("authors_toriyama.json"),
+            ])
+            viewModel.searchScope = .titles
+            viewModel.search("dra")
+            await viewModel.suggestionsTask?.value
+            let titlesFailure = try #require(viewModel.searchError)
+            expectAPIError(.serverError, matches: titlesFailure)
+
+            viewModel.searchScope = .authors
+            viewModel.search("toriya")
+
+            // Cleared on the switch itself, before the author request answers.
+            #expect(viewModel.searchError == nil)
+            await viewModel.authorTask?.value
+            #expect(viewModel.searchError == nil)
+            #expect(viewModel.authorResults.count == 6)
+        }
+
+        @Test func `After switching from Authors to Titles rapid typing still collapses into one request for the last text`() async throws {
+            CatalogMockScenario.set([
+                .searchAuthor: .fixture("authors_toriyama.json"),
+                .mangasBeginsWith: .fixture("mangas_begins_dra.json"),
+            ])
+            let fixtureIDs = try beginsWithIDs("mangas_begins_dra.json")
+            viewModel.searchScope = .authors
+            viewModel.search("toriya")
+            await viewModel.authorTask?.value
+
+            viewModel.searchScope = .titles
+            // The switch searches the text still in the field, then the user types over it.
+            viewModel.search("toriya")
+            for text in ["dra", "drag", "drago"] {
+                viewModel.search(text)
+            }
+            await viewModel.suggestionsTask?.value
+
+            let requests = CatalogMockScenario.requests(.mangasBeginsWith)
+            #expect(requests.map(\.path) == ["/search/mangasBeginsWith/drago"])
+            #expect(CatalogMockScenario.hits(.searchAuthor) == 1)
+            #expect(viewModel.suggestionsKey == "begins:drago")
+            #expect(viewModel.searchError == nil)
+
+            let context = PersistenceTestSupport.freshContext(container)
+            // Only the last text left an index behind.
+            let allEntries = try PersistenceTestSupport.fetchAll(CatalogEntry.self, in: context)
+            #expect(Set(allEntries.map(\.modeKey)) == ["begins:drago"])
+            let drago = try PersistenceTestSupport.catalogEntries(modeKey: "begins:drago", in: context)
+            #expect(drago.compactMap(\.manga?.id) == Array(fixtureIDs.prefix(8)))
         }
 
         // MARK: - Submit a title search

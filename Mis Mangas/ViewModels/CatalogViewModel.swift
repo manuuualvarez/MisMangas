@@ -218,12 +218,19 @@ final class CatalogViewModel {
 
     /// Sends the field to the request of the scope in force. Called on every change of the text
     /// and of the scope, so switching scope with text already typed searches it again in the
-    /// new domain.
+    /// new domain. The request of the other scope is cancelled first: a late answer to a scope
+    /// the reader left must not replace the error or the results of the one on screen.
     func search(_ text: String) {
         switch searchScope {
         case .titles:
+            authorTask?.cancel()
+            authorTask = nil
+            // A cancelled author lookup never lands, so nothing else would lower the flag.
+            isSearchingAuthors = false
             updateSearchText(text)
         case .authors:
+            suggestionsTask?.cancel()
+            suggestionsTask = nil
             searchAuthors(text)
         }
     }
