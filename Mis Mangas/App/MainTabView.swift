@@ -8,16 +8,26 @@
 import SwiftUI
 
 /// Top-level tabs: a tab bar on iPhone, a sidebar-adaptable bar on iPad. Search is the tab with
-/// that role: the system draws it apart from the others and hosts its field.
+/// that role: the system draws it apart from the others and hosts its field. The selected tab is
+/// state here so My Collection can send the user to the catalog, with a mode to apply there.
 struct MainTabView: View {
     @Environment(AppDependencies.self) private var dependencies
+    @State private var selectedTab = AppTab.catalog
+    @State private var pendingCatalogMode: CatalogMode?
 
     var body: some View {
-        TabView {
-            Tab("Catalog", systemImage: "books.vertical") {
-                CatalogView(syncService: dependencies.syncService)
+        TabView(selection: $selectedTab) {
+            Tab("Catalog", systemImage: "books.vertical", value: .catalog) {
+                CatalogView(syncService: dependencies.syncService, pendingMode: $pendingCatalogMode)
             }
-            Tab(role: .search) {
+            Tab("My Collection", systemImage: "bookmark", value: .collection) {
+                MyCollectionView(
+                    syncService: dependencies.syncService,
+                    selectedTab: $selectedTab,
+                    pendingCatalogMode: $pendingCatalogMode
+                )
+            }
+            Tab(value: .search, role: .search) {
                 SearchView(syncService: dependencies.syncService)
             }
         }

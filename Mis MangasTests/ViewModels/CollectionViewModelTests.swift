@@ -117,6 +117,15 @@ struct CollectionViewModelTests {
         #expect(!stored.inCollection)
     }
 
+    @Test func `A removal that succeeds leaves nothing to retry`() async throws {
+        _ = try await actor.cacheDetail(monster)
+        await viewModel.save(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false)
+
+        await viewModel.remove(mangaID: Self.monsterID)
+
+        #expect(viewModel.failedRemovalID == nil)
+    }
+
     @Test func `remove of a manga that was never saved is not an error`() async throws {
         await viewModel.remove(mangaID: Self.unknownID)
 

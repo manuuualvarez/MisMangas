@@ -17,6 +17,9 @@ final class CollectionViewModel {
     private(set) var isSaving = false
     /// The last failed write; cleared by the next one that succeeds.
     private(set) var error: PersistenceError?
+    /// The manga of the last removal that failed, so the list can offer to retry it; cleared by
+    /// the next removal that succeeds.
+    private(set) var failedRemovalID: Int?
 
     init(syncService: MangaSyncService) {
         self.syncService = syncService
@@ -44,8 +47,18 @@ final class CollectionViewModel {
         do {
             try await syncService.removeCollectionEntry(mangaID: mangaID)
             error = nil
+            failedRemovalID = nil
         } catch {
             self.error = error
+            failedRemovalID = mangaID
         }
+    }
+
+    /// Repeats the last removal that failed, if any.
+    func retryRemoval() async {
+        guard let failedRemovalID else {
+            return
+        }
+        await remove(mangaID: failedRemovalID)
     }
 }

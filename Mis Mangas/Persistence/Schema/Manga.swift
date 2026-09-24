@@ -174,6 +174,24 @@ extension Manga {
         return String(localized: "\(status), since \(start)")
     }
 
+    /// What VoiceOver reads for a collection row: the title and the progress spelled out
+    /// ("Dragon Ball, reading volume 7 of 42"), followed by "complete collection" when it is.
+    var collectionAccessibilityLabel: String {
+        guard let entry = collectionEntry else {
+            return title
+        }
+        let progress = switch (entry.readingVolume, volumes) {
+        case let (reading?, total?):
+            String(localized: "\(title), reading volume \(reading) of \(total)")
+        case let (reading?, nil):
+            String(localized: "\(title), reading volume \(reading)")
+        case (nil, _):
+            // Grammar agreement ("1 volume" / "2 volumes") is only applied to attributed strings.
+            String(AttributedString(localized: "\(title), ^[\(entry.volumesOwned.count) volume](inflect: true) owned").characters)
+        }
+        return entry.completeCollection ? String(localized: "\(progress), complete collection") : progress
+    }
+
     /// The reader's progress in words, for a manga in the collection: "Vol. 7 of 42", "Vol. 7"
     /// while the volume count is unknown, or how many volumes are owned before reading starts.
     /// `nil` outside the collection.

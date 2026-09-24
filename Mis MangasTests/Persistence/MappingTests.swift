@@ -333,6 +333,34 @@ struct MappingTests {
         #expect(manga.primaryAuthorName == expectedNames.first)
     }
 
+    // MARK: - Collection row label
+
+    @Test(arguments: [
+        (42 as Int?, 7 as Int?, false, "Dragon Ball, reading volume 7 of 42"),
+        (nil, 7, false, "Dragon Ball, reading volume 7"),
+        (42, 7, true, "Dragon Ball, reading volume 7 of 42, complete collection"),
+        (42, nil, true, "Dragon Ball, 3 volumes owned, complete collection"),
+        (42, nil, false, "Dragon Ball, 3 volumes owned"),
+    ])
+    func `collectionAccessibilityLabel says the title and how far the reader has got in words`(
+        volumes: Int?, reading: Int?, isComplete: Bool, expected: String
+    ) throws {
+        let manga = try JSONDecoder.app.decode(MangaDTO.self, from: Self.mangaJSON()).makeManga()
+        manga.volumes = volumes
+        manga.collectionEntry = UserCollectionEntry(
+            mangaID: manga.id, volumesOwned: [1, 2, 3], readingVolume: reading, completeCollection: isComplete
+        )
+
+        #expect(manga.collectionAccessibilityLabel == expected)
+    }
+
+    @Test func `collectionAccessibilityLabel of a single owned volume is singular`() throws {
+        let manga = try JSONDecoder.app.decode(MangaDTO.self, from: Self.mangaJSON()).makeManga()
+        manga.collectionEntry = UserCollectionEntry(mangaID: manga.id, volumesOwned: [1])
+
+        #expect(manga.collectionAccessibilityLabel == "Dragon Ball, 1 volume owned")
+    }
+
     // MARK: - Inline fixture (shape from the backend OpenAPI)
 
     private static func mangaJSON(
