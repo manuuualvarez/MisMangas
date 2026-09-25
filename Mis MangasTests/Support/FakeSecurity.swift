@@ -24,6 +24,12 @@ import Synchronization
 /// returns once one is held. Cancelling the caller ends a held refresh at once with
 /// `AuthError.server(.cancelled)`, as a cancelled request does.
 ///
+/// With `holdsLogin`, `login` stays in flight until `releaseLogin(throwing:)`, and
+/// `waitUntilLoginHeld(orUntilFinished:)` returns once one is held. A held login ignores the
+/// cancellation of its caller: it plays an answer that is already arriving, so the caller sees it
+/// (the session stored) after being cancelled. One login is held at a time; turn `holdsLogin` off
+/// once it is held so the next one answers at once.
+///
 /// Configure with `configure { $0.… = … }` and read the oracle with `calls(_:)` and `snapshot`.
 /// Both are `nonisolated`, so tests on any actor use them without `await`.
 final class FakeSecurity: SecurityData {
@@ -52,6 +58,8 @@ final class FakeSecurity: SecurityData {
         var registerError: AuthError?
         var loginError: AuthError?
         var refreshError: AuthError?
+        /// Thrown by `currentToken`, as a Keychain that cannot be read.
+        var currentTokenError: AuthError?
         /// Thrown by `validToken` before looking at `token`.
         var validTokenError: AuthError?
         var meResult: Result<UserResponse, AuthError> = .failure(.sessionExpired)
@@ -60,6 +68,8 @@ final class FakeSecurity: SecurityData {
         var validateJWTResult: Result<JWTPayload, AuthError> = .failure(.invalidToken)
         /// `refresh` waits for `releaseRefresh(throwing:)` instead of answering at once.
         var holdsRefresh = false
+        /// `login` waits for `releaseLogin(throwing:)` instead of answering at once.
+        var holdsLogin = false
     }
 
     private struct State {
@@ -67,10 +77,14 @@ final class FakeSecurity: SecurityData {
         var calls: [Method: Int] = [:]
         /// The `refresh` in flight while `holdsRefresh` is set.
         var heldRefresh: CheckedContinuation<Result<Void, AuthError>, Never>?
-        /// A test suspended in `waitUntilRefreshHeld(orUntilFinished:)`.
-        var refreshWaiter: CheckedContinuation<Void, Never>?
-        /// The watched task finished before the wait suspended: the wait returns at once.
-        var isRefreshWaitOver = false
+        /// The `login` in flight while `holdsLogin` is set; it resumes with the error to throw, or
+        /// `nil` to answer as an unheld one.
+        var heldLogin: CheckedContinuation<AuthError?, Never>?
+        /// Tests suspended in `waitUntilRefreshHeld` or `waitUntilLoginHeld`, by the method they
+        /// wait for.
+        var waiters: [Method: CheckedContinuation<Void, Never>] = [:]
+        /// Methods whose watched task finished before the wait suspended: that wait returns at once.
+        var finishedWaits: Set<Method> = []
     }
 
     let store: any SecureStore
@@ -102,27 +116,13 @@ final class FakeSecurity: SecurityData {
     /// Returns once a `refresh` is held, or as soon as `task` finishes, so a test whose code
     /// under test never renews fails instead of hanging. Returns whether a `refresh` is held.
     nonisolated func waitUntilRefreshHeld<Success: Sendable, Failure: Error>(orUntilFinished task: Task<Success, Failure>) async -> Bool {
-        let watcher = Task {
-            _ = await task.result
-            self.stopWaitingForRefresh()
-        }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let isReady = state.withLock { state -> Bool in
-                if state.heldRefresh != nil || state.isRefreshWaitOver {
-                    return true
-                }
-                state.refreshWaiter = continuation
-                return false
-            }
-            if isReady {
-                continuation.resume()
-            }
-        }
-        watcher.cancel()
-        return state.withLock { state in
-            state.isRefreshWaitOver = false
-            return state.heldRefresh != nil
-        }
+        await waitUntilHeld(.refresh, orUntilFinished: task)
+    }
+
+    /// Returns once a `login` is held, or as soon as `task` finishes, so a test whose code under
+    /// test never signs in fails instead of hanging. Returns whether a `login` is held.
+    nonisolated func waitUntilLoginHeld<Success: Sendable, Failure: Error>(orUntilFinished task: Task<Success, Failure>) async -> Bool {
+        await waitUntilHeld(.login, orUntilFinished: task)
     }
 
     /// Answers the held `refresh`: with `error`, or else as an unheld one would. Does nothing when
@@ -143,22 +143,66 @@ final class FakeSecurity: SecurityData {
         }
     }
 
-    private nonisolated func resumeRefreshWaiter() {
-        let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
-            let waiter = state.refreshWaiter
-            state.refreshWaiter = nil
-            return waiter
+    /// Answers the held `login`: with `error`, or else as an unheld one would (applying
+    /// `loginError`, or storing the session). Does nothing when none is held.
+    nonisolated func releaseLogin(throwing error: AuthError? = nil) {
+        let held = state.withLock { state -> CheckedContinuation<AuthError?, Never>? in
+            let held = state.heldLogin
+            state.heldLogin = nil
+            return held
         }
+        held?.resume(returning: error)
+    }
+
+    private nonisolated static func isHeld(_ method: Method, in state: State) -> Bool {
+        switch method {
+        case .refresh:
+            state.heldRefresh != nil
+        case .login:
+            state.heldLogin != nil
+        default:
+            false
+        }
+    }
+
+    private nonisolated func waitUntilHeld<Success: Sendable, Failure: Error>(
+        _ method: Method,
+        orUntilFinished task: Task<Success, Failure>
+    ) async -> Bool {
+        let watcher = Task {
+            _ = await task.result
+            self.stopWaiting(for: method)
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let isReady = state.withLock { state -> Bool in
+                if Self.isHeld(method, in: state) || state.finishedWaits.contains(method) {
+                    return true
+                }
+                state.waiters[method] = continuation
+                return false
+            }
+            if isReady {
+                continuation.resume()
+            }
+        }
+        watcher.cancel()
+        return state.withLock { state in
+            state.finishedWaits.remove(method)
+            return Self.isHeld(method, in: state)
+        }
+    }
+
+    private nonisolated func resumeWaiter(for method: Method) {
+        let waiter = state.withLock { $0.waiters.removeValue(forKey: method) }
         waiter?.resume()
     }
 
-    private nonisolated func stopWaitingForRefresh() {
+    private nonisolated func stopWaiting(for method: Method) {
         let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
-            guard let waiter = state.refreshWaiter else {
-                state.isRefreshWaitOver = true
+            guard let waiter = state.waiters.removeValue(forKey: method) else {
+                state.finishedWaits.insert(method)
                 return nil
             }
-            state.refreshWaiter = nil
             return waiter
         }
         waiter?.resume()
@@ -180,7 +224,7 @@ final class FakeSecurity: SecurityData {
                 if isCancelled {
                     continuation.resume(returning: .failure(.server(.cancelled)))
                 } else {
-                    resumeRefreshWaiter()
+                    resumeWaiter(for: .refresh)
                 }
             }
         } onCancel: {
@@ -191,6 +235,24 @@ final class FakeSecurity: SecurityData {
             }
             held?.resume(returning: .failure(.server(.cancelled)))
         }
+    }
+
+    /// Parks the calling `login` until `releaseLogin(throwing:)`, whatever happens to its caller.
+    private nonisolated func heldLoginAnswer() async -> AuthError? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<AuthError?, Never>) in
+            state.withLock { $0.heldLogin = continuation }
+            resumeWaiter(for: .login)
+        }
+    }
+
+    /// What an answered `login` does to the scripted session.
+    private nonisolated static func completeLogin(_ behavior: inout Behavior, email: String) -> Result<Void, AuthError> {
+        if let error = behavior.loginError {
+            return .failure(error)
+        }
+        behavior.token = behavior.issuedToken
+        behavior.email = email
+        return .success(())
     }
 
     /// What an answered `refresh` does to the scripted session.
@@ -220,7 +282,12 @@ final class FakeSecurity: SecurityData {
     }
 
     func currentToken() throws(AuthError) -> String? {
-        record(.currentToken) { $0.token }
+        try record(.currentToken) { behavior -> Result<String?, AuthError> in
+            if let error = behavior.currentTokenError {
+                return .failure(error)
+            }
+            return .success(behavior.token)
+        }.get()
     }
 
     func storedEmail() throws(AuthError) -> String? {
@@ -237,14 +304,11 @@ final class FakeSecurity: SecurityData {
     }
 
     func login(email: String, password: String) async throws(AuthError) {
-        try record(.login) { behavior -> Result<Void, AuthError> in
-            if let error = behavior.loginError {
-                return .failure(error)
-            }
-            behavior.token = behavior.issuedToken
-            behavior.email = email
-            return .success(())
-        }.get()
+        let isHeld = record(.login) { $0.holdsLogin }
+        if isHeld, let error = await heldLoginAnswer() {
+            throw error
+        }
+        try state.withLock { Self.completeLogin(&$0.behavior, email: email) }.get()
     }
 
     func refresh() async throws(AuthError) {

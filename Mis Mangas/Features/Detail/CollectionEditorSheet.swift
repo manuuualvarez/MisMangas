@@ -75,6 +75,8 @@ struct CollectionEditorSheet: View {
                         Button("Remove from collection", role: .destructive) {
                             isConfirmingRemoval = true
                         }
+                        // The system red falls below 4.5:1 on a light row.
+                        .foregroundStyle(.mmDestructive)
                     }
                 }
             }

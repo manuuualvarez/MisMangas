@@ -18,6 +18,8 @@ import Observation
 @MainActor
 final class SessionViewModel {
     enum State: Equatable {
+        /// The launch is still deciding whether an earlier session resumes; nothing is shown yet.
+        case restoring
         case idle
         case guest
         case authenticating
@@ -28,7 +30,7 @@ final class SessionViewModel {
         /// underlying errors that cannot be compared, and the message is what the screen shows.
         static func == (lhs: State, rhs: State) -> Bool {
             switch (lhs, rhs) {
-            case (.idle, .idle), (.guest, .guest), (.authenticating, .authenticating):
+            case (.restoring, .restoring), (.idle, .idle), (.guest, .guest), (.authenticating, .authenticating):
                 true
             case let (.authenticated(lhsEmail), .authenticated(rhsEmail)):
                 lhsEmail == rhsEmail
@@ -43,9 +45,37 @@ final class SessionViewModel {
     /// `UserDefaults` key of the guest choice; not sensitive.
     static let guestKey = "session.guest"
 
-    private(set) var state: State = .idle
+    private(set) var state: State = .restoring
     /// Shown on the welcome screen after the session ended on its own.
     private(set) var expiredMessage: String?
+    /// Changes saved on the device that still wait to reach the server.
+    private(set) var pendingCount = 0
+    /// Changes the server kept failing, set aside until retried.
+    private(set) var blockedCount = 0
+    /// The last sign-out did not happen: the unsent changes or the stored session could not be
+    /// removed. The alert that says so clears it.
+    var isSignOutFailurePresented = false
+    /// The user chose to go on without an account and has not signed in since. A sign-in started
+    /// from there keeps the app on screen while it waits and if it fails.
+    private(set) var isGuestModeChosen = false
+
+    /// Everything a sign-out discards: the pending changes and the blocked ones.
+    var unsentChangesCount: Int {
+        pendingCount + blockedCount
+    }
+
+    /// Whether the welcome screen takes the place of the app: signed out, or signing in without
+    /// having chosen guest mode.
+    var isWelcomeRequired: Bool {
+        switch state {
+        case .restoring, .guest, .authenticated:
+            false
+        case .idle:
+            true
+        case .authenticating, .failed:
+            !isGuestModeChosen
+        }
+    }
 
     var isAuthenticated: Bool {
         if case .authenticated = state {
@@ -99,13 +129,22 @@ final class SessionViewModel {
     private let syncCoordinator: SyncCoordinator
     private let syncActor: MangaSyncActor
     private let defaults: UserDefaults
+    /// Builds the sync service of a session, signed in or not, for the coordinator.
+    private let makeSyncService: @MainActor (Bool) -> MangaSyncService
     private var currentTask: Task<Void, Never>?
 
-    init(security: any SecurityData, syncCoordinator: SyncCoordinator, syncActor: MangaSyncActor, defaults: UserDefaults) {
+    init(
+        security: any SecurityData,
+        syncCoordinator: SyncCoordinator,
+        syncActor: MangaSyncActor,
+        defaults: UserDefaults,
+        makeSyncService: @escaping @MainActor (Bool) -> MangaSyncService
+    ) {
         self.security = security
         self.syncCoordinator = syncCoordinator
         self.syncActor = syncActor
         self.defaults = defaults
+        self.makeSyncService = makeSyncService
     }
 
     func signIn(email: String, password: String) async {
@@ -126,6 +165,7 @@ final class SessionViewModel {
         currentTask?.cancel()
         currentTask = nil
         defaults.set(true, forKey: Self.guestKey)
+        isGuestModeChosen = true
         expiredMessage = nil
         state = .guest
     }
@@ -137,8 +177,11 @@ final class SessionViewModel {
     }
 
     /// Resumes the session of an earlier launch without asking for the password, renewing its
-    /// token; without one, returns to the guest mode if that was the choice.
+    /// token; without one, returns to the guest mode if that was the choice. Only the launch
+    /// restores: once decided, a second call (another window) changes nothing and interrupts
+    /// nothing.
     func restoreSession() async {
+        guard state == .restoring else { return }
         await replaceCurrentTask { [weak self] in
             await self?.restore()
         }
@@ -152,10 +195,18 @@ final class SessionViewModel {
         }
     }
 
-    /// Forgets the error of a failed attempt, so the next form opens clean.
+    /// Reads how many changes are still waiting to be sent, for the profile and the sign-out
+    /// warning. If the store cannot be read, the last counts stay.
+    func refreshPendingChanges() async {
+        guard let counts = try? await syncActor.pendingOperationCounts() else { return }
+        pendingCount = counts.pending
+        blockedCount = counts.blocked
+    }
+
+    /// Forgets the error of a failed attempt, so the next form opens clean. A guest stays a guest.
     func clearFailure() {
         if case .failed = state {
-            state = .idle
+            state = isGuestModeChosen ? .guest : .idle
         }
     }
 
@@ -186,57 +237,110 @@ final class SessionViewModel {
             state = .failed(error)
             return
         }
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else {
+            // The answer came after the user moved on, and it stored its session anyway: it is
+            // undone, so leaving a sign-in never leaves a token behind. If another sign-in replaced
+            // this one, its session may go too, and its next request asks to sign in again; that
+            // is safer than one account's collection travelling with another account's token.
+            try? await security.logout()
+            return
+        }
         defaults.removeObject(forKey: Self.guestKey)
+        isGuestModeChosen = false
         expiredMessage = nil
         state = .authenticated(email: email)
     }
 
-    /// The sync coordinator stops first: a pass in flight must not go on with the session that is
-    /// being closed.
+    /// The sync coordinator moves to the device-only service first: the pass in flight stops, and
+    /// any pass asked for from now on sends nothing. The unsent changes go next, so another
+    /// account never sends them; if they cannot be discarded, the session stays open with its
+    /// service back.
     private func logout() async {
-        await syncCoordinator.stop()
+        await syncCoordinator.replaceService(makeSyncService(false))
         guard !Task.isCancelled else { return }
+        do {
+            try await syncActor.clearOutbox()
+        } catch {
+            // The operation that cancelled this one decides the coordinator's service.
+            guard !Task.isCancelled else { return }
+            await syncCoordinator.replaceService(makeSyncService(true))
+            isSignOutFailurePresented = true
+            return
+        }
+        guard !Task.isCancelled else { return }
+        isSignOutFailurePresented = false
+        pendingCount = 0
+        blockedCount = 0
         do {
             try await security.logout()
         } catch {
+            // The Keychain still holds the session, and the next launch would resume it: the
+            // session stays open, with its service back, and the profile says so.
             guard !Task.isCancelled else { return }
-            state = .failed(error)
+            await syncCoordinator.replaceService(makeSyncService(true))
+            isSignOutFailurePresented = true
             return
         }
         guard !Task.isCancelled else { return }
         defaults.removeObject(forKey: Self.guestKey)
+        isGuestModeChosen = false
         expiredMessage = nil
         state = .idle
     }
 
     private func restore() async {
         guard !Task.isCancelled else { return }
+        isGuestModeChosen = defaults.bool(forKey: Self.guestKey)
         let email: String
         do {
-            guard try await security.currentToken() != nil, let storedEmail = try await security.storedEmail() else {
+            guard try await security.currentToken() != nil else {
                 guard !Task.isCancelled else { return }
-                state = defaults.bool(forKey: Self.guestKey) ? .guest : .idle
+                state = isGuestModeChosen ? .guest : .idle
+                return
+            }
+            guard !isGuestModeChosen else {
+                // Guest mode is only chosen once the last session has ended, so a token next to it
+                // is one that could not be removed then; it must not resume that session.
+                try? await security.clearToken()
+                guard !Task.isCancelled else { return }
+                state = .guest
+                return
+            }
+            guard let storedEmail = try await security.storedEmail() else {
+                // A token without its account cannot resume a session, and left in place it would
+                // resume one on a later launch.
+                try? await security.clearToken()
+                guard !Task.isCancelled else { return }
+                state = isGuestModeChosen ? .guest : .idle
                 return
             }
             email = storedEmail
         } catch {
+            // The Keychain cannot be read: no session can be resumed, and none may linger.
+            try? await security.clearToken()
             guard !Task.isCancelled else { return }
-            state = .failed(error)
+            showExpired()
             return
         }
         guard !Task.isCancelled else { return }
-        state = .authenticating
+        // The renewal keeps the launch state: authenticating belongs to the sign-in forms.
         do {
             try await security.refresh()
         } catch {
             guard !Task.isCancelled else { return }
             switch error {
-            case .sessionExpired, .invalidToken, .invalidCredentials:
+            case .sessionExpired, .invalidCredentials:
                 // The renewal already removed the token.
                 showExpired()
                 return
-            case .offline, .server, .keychain, .invalidEmail, .weakPassword, .emailAlreadyRegistered:
+            case .invalidToken, .keychain:
+                // The renewal failed without removing the stored token, which cannot be trusted
+                // to resume the session any more.
+                try? await security.clearToken()
+                guard !Task.isCancelled else { return }
+                showExpired()
+                return
+            case .offline, .server, .invalidEmail, .weakPassword, .emailAlreadyRegistered:
                 // The stored token is still valid: without a renewal the session goes on, and the
                 // next authenticated request renews it or ends it.
                 break

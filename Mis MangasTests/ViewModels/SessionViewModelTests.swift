@@ -7,6 +7,7 @@
 
 import Foundation
 @testable import Mis_Mangas
+import SwiftData
 import Testing
 
 /// Sign-up, sign-in, guest mode and sign-out as the welcome screens drive them, over a
@@ -15,11 +16,12 @@ import Testing
 /// Oracles, never the code under test: the call counts of the fake (a rejected form never
 /// reaches `register` or `login`; "signed in" means exactly one `login` succeeded, since
 /// `register` alone does not sign in), the errors the fake was told to throw, the rules the
-/// acceptance scenarios state (a valid email, at least 8 characters) and the guest preference
-/// read straight from an isolated `UserDefaults` suite.
+/// acceptance scenarios state (a valid email, at least 8 characters), the guest preference
+/// read straight from an isolated `UserDefaults` suite, and the outbox seeded through the real
+/// `MangaSyncActor` and read back with a fresh `ModelContext` over its in-memory container.
 ///
-/// A class only for `deinit`, which removes that suite. The collection coordinator runs the
-/// guest service, so nothing here reaches the network.
+/// A class only for `deinit`, which removes that suite. The sync coordinator starts with the guest
+/// service and no test here runs a pass, so nothing reaches the network.
 @Suite("SessionViewModel")
 @MainActor
 final class SessionViewModelTests {
@@ -29,15 +31,20 @@ final class SessionViewModelTests {
     /// One character short of the minimum.
     private nonisolated static let oneShort = "1234567"
     /// `errSecInteractionNotAllowed`: what Keychain Services returns while the device is locked.
-    private static let keychainFailure: OSStatus = -25308
+    private nonisolated static let keychainFailure: OSStatus = -25308
     private static let guestKey = "session.guest"
     /// A session stored by an earlier launch, under another account.
     private static let earlierSession = "example.previous.jwt"
     private static let earlierEmail = "previous@example.com"
+    private static let t0 = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    private static let t1 = Date(timeIntervalSinceReferenceDate: 800_000_100)
+    private static let t2 = Date(timeIntervalSinceReferenceDate: 800_000_200)
 
     private let security: FakeSecurity
     private let defaults: UserDefaults
     private let suiteName: String
+    private let syncActor: MangaSyncActor
+    private let container: ModelContainer
     private let viewModel: SessionViewModel
 
     init() throws {
@@ -45,20 +52,28 @@ final class SessionViewModelTests {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         let security = FakeSecurity()
         let made = try PersistenceTestSupport.makeActor()
+        let actor = made.actor
         let repository = DefaultMangaRepositoryTest()
-        let guestService = MangaSyncService(
-            syncActor: made.actor,
-            mangaRepository: repository,
-            taxonomyCache: TaxonomyCacheActor(mangaRepository: repository)
-        )
+        let taxonomyCache = TaxonomyCacheActor(mangaRepository: repository)
+        let guestService = MangaSyncService(syncActor: actor, mangaRepository: repository, taxonomyCache: taxonomyCache)
         self.suiteName = suiteName
         self.defaults = defaults
         self.security = security
+        syncActor = made.actor
+        container = made.container
         viewModel = SessionViewModel(
             security: security,
             syncCoordinator: SyncCoordinator(service: guestService),
-            syncActor: made.actor,
-            defaults: defaults
+            syncActor: actor,
+            defaults: defaults,
+            makeSyncService: { authenticated in
+                MangaSyncService(
+                    syncActor: actor,
+                    mangaRepository: repository,
+                    taxonomyCache: taxonomyCache,
+                    collectionRepository: authenticated ? DefaultCollectionRepositoryTest(security: security) : nil
+                )
+            }
         )
     }
 
@@ -74,6 +89,26 @@ final class SessionViewModelTests {
         }
         #expect(expected.matches(error), "Expected failed(\(expected)), got failed(\(error))", sourceLocation: sourceLocation)
         #expect(!viewModel.isAuthenticated, sourceLocation: sourceLocation)
+    }
+
+    /// A session left by an earlier launch: a stored token and its account's email.
+    private func storeEarlierSession() {
+        security.configure {
+            $0.token = Self.earlierSession
+            $0.email = Self.earlierEmail
+        }
+    }
+
+    /// Saves a collection entry for each id through the real actor, which queues one upload per
+    /// entry, then blocks the operation of `blockedID` by failing it as the drain does.
+    private func queueOperations(_ ids: [Int], blocking blockedID: Int? = nil) async throws {
+        try await CollectionTestSupport.storeMangas(ids, in: syncActor, now: Self.t0)
+        for id in ids {
+            try await syncActor.saveCollectionEntry(mangaID: id, volumesOwned: [id], readingVolume: nil, completeCollection: false, now: Self.t1)
+        }
+        if let blockedID {
+            try await CollectionTestSupport.block(mangaID: blockedID, in: syncActor, container: container, now: Self.t2)
+        }
     }
 
     // MARK: - signUp
@@ -268,5 +303,354 @@ final class SessionViewModelTests {
         #expect(security.calls(.logout) == 1)
         #expect(viewModel.state == .idle)
         #expect(!viewModel.isAuthenticated)
+    }
+
+    @Test func `signOut whose credentials cannot be removed keeps the session open and reports it`() async throws {
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+        try #require(viewModel.state == .authenticated(email: Self.email))
+        security.configure { $0.logoutError = .keychain(Self.keychainFailure) }
+
+        await viewModel.signOut()
+
+        // The Keychain still holds the session: pretending it ended would resume it at next launch.
+        #expect(viewModel.state == .authenticated(email: Self.email))
+        #expect(viewModel.isSignOutFailurePresented)
+    }
+
+    // MARK: - restoreSession
+
+    @Test func `A new session waits in restoring until the restore decides, instead of showing the welcome screen`() {
+        #expect(viewModel.state == .restoring)
+        #expect(!viewModel.isAuthenticated)
+    }
+
+    @Test func `restoreSession stays in restoring while the stored token is being renewed, never authenticating, then resumes the stored account`() async throws {
+        storeEarlierSession()
+        security.configure { $0.holdsRefresh = true }
+        let viewModel = viewModel
+
+        let restoring = Task { await viewModel.restoreSession() }
+        try #require(await security.waitUntilRefreshHeld(orUntilFinished: restoring))
+
+        // Authenticating is what a sign-in form shows; it would route the launch to the welcome screen.
+        #expect(viewModel.state == .restoring)
+
+        security.releaseRefresh()
+        await restoring.value
+
+        #expect(viewModel.state == .authenticated(email: Self.earlierEmail))
+    }
+
+    @Test func `restoreSession with a stored token renews it and resumes the stored account without asking for the password`() async {
+        storeEarlierSession()
+
+        await viewModel.restoreSession()
+
+        #expect(security.calls(.refresh) == 1)
+        #expect(security.calls(.login) == 0)
+        #expect(viewModel.state == .authenticated(email: Self.earlierEmail))
+        #expect(viewModel.expiredMessage == nil)
+    }
+
+    @Test(arguments: [AuthError.sessionExpired, .invalidToken, .invalidCredentials])
+    func `restoreSession whose renewal is refused ends in idle with the expired-session message and keeps the stored email`(refusal: AuthError) async {
+        storeEarlierSession()
+        security.configure { $0.refreshError = refusal }
+
+        await viewModel.restoreSession()
+
+        #expect(security.calls(.refresh) == 1)
+        #expect(viewModel.state == .idle)
+        #expect(!viewModel.isAuthenticated)
+        #expect(viewModel.expiredMessage == AuthError.sessionExpired.errorDescription)
+        // An expiry is not a sign-out: the email stays, so the next sign-in can tell whether the
+        // account changed.
+        #expect(security.calls(.logout) == 0)
+    }
+
+    @Test(arguments: [AuthError.offline, .server(.serverError)])
+    func `restoreSession whose renewal fails without connection or with a server error keeps the session`(failure: AuthError) async {
+        storeEarlierSession()
+        security.configure { $0.refreshError = failure }
+
+        await viewModel.restoreSession()
+
+        #expect(security.calls(.refresh) == 1)
+        #expect(viewModel.state == .authenticated(email: Self.earlierEmail))
+        #expect(viewModel.expiredMessage == nil)
+        #expect(security.calls(.clearToken) == 0)
+        #expect(security.calls(.logout) == 0)
+    }
+
+    @Test func `restoreSession without a stored token returns to guest mode when that was the choice`() async {
+        defaults.set(true, forKey: Self.guestKey)
+
+        await viewModel.restoreSession()
+
+        #expect(viewModel.state == .guest)
+        #expect(security.calls(.refresh) == 0)
+    }
+
+    @Test func `restoreSession without a stored token or a guest choice ends in idle, with no expired-session message`() async {
+        await viewModel.restoreSession()
+
+        #expect(viewModel.state == .idle)
+        #expect(viewModel.expiredMessage == nil)
+        #expect(security.calls(.refresh) == 0)
+    }
+
+    // MARK: - expire
+
+    @Test func `expire after signing in forgets the token, keeps the email and returns to idle with the expired-session message`() async throws {
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+        try #require(viewModel.state == .authenticated(email: Self.email))
+
+        await viewModel.expire()
+
+        #expect(viewModel.state == .idle)
+        #expect(viewModel.expiredMessage == AuthError.sessionExpired.errorDescription)
+        #expect(security.calls(.clearToken) == 1)
+        #expect(security.calls(.logout) == 0)
+        #expect(security.snapshot.email == Self.email)
+    }
+
+    // MARK: - Unsent changes
+
+    @Test func `refreshPendingChanges counts the queued operations apart from the blocked ones, and both as unsent`() async throws {
+        try await queueOperations([1, 2], blocking: 2)
+
+        await viewModel.refreshPendingChanges()
+
+        #expect(viewModel.pendingCount == 1)
+        #expect(viewModel.blockedCount == 1)
+        #expect(viewModel.unsentChangesCount == 2)
+    }
+
+    @Test func `signOut discards every unsent change, blocked ones included, logs out and keeps the local collection`() async throws {
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+        try #require(viewModel.state == .authenticated(email: Self.email))
+        try await queueOperations([1, 2], blocking: 2)
+
+        await viewModel.signOut()
+
+        #expect(security.calls(.logout) == 1)
+        #expect(viewModel.state == .idle)
+        let context = PersistenceTestSupport.freshContext(container)
+        #expect(try CollectionTestSupport.operations(in: context).isEmpty)
+        #expect(try CollectionTestSupport.entries(in: context).map(\.mangaID) == [1, 2])
+    }
+
+    // MARK: - A guest who signs in
+
+    @Test(.timeLimit(.minutes(1)))
+    func `A guest who signs in keeps the tabs while the sign-in waits, and leaves guest mode once it succeeds`() async throws {
+        viewModel.continueAsGuest()
+        security.configure { $0.holdsLogin = true }
+        let viewModel = viewModel
+
+        let signingIn = Task { await viewModel.signIn(email: Self.email, password: Self.longEnough) }
+        try #require(await security.waitUntilLoginHeld(orUntilFinished: signingIn))
+
+        #expect(viewModel.state == .authenticating)
+        #expect(viewModel.isGuestModeChosen)
+        // The welcome screen would replace the tabs and the profile form that is waiting.
+        #expect(!viewModel.isWelcomeRequired)
+
+        security.releaseLogin()
+        await signingIn.value
+
+        #expect(viewModel.state == .authenticated(email: Self.email))
+        #expect(!viewModel.isGuestModeChosen)
+        #expect(!viewModel.isWelcomeRequired)
+    }
+
+    @Test func `A guest whose sign-in is refused stays a guest, on the tabs, with the failure to show`() async {
+        viewModel.continueAsGuest()
+        security.configure { $0.loginError = .invalidCredentials }
+
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+
+        expectFailed(.invalidCredentials)
+        #expect(viewModel.isGuestModeChosen)
+        #expect(!viewModel.isWelcomeRequired)
+    }
+
+    @Test func `A guest restored at launch whose sign-in is refused stays on the tabs`() async throws {
+        defaults.set(true, forKey: Self.guestKey)
+        await viewModel.restoreSession()
+        try #require(viewModel.state == .guest)
+        security.configure { $0.loginError = .invalidCredentials }
+
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+
+        expectFailed(.invalidCredentials)
+        #expect(viewModel.isGuestModeChosen)
+        #expect(!viewModel.isWelcomeRequired)
+    }
+
+    @Test func `Without the guest choice the welcome screen waits for the restore, then shows in idle and after a refused sign-in`() async throws {
+        #expect(!viewModel.isWelcomeRequired)
+
+        await viewModel.restoreSession()
+        try #require(viewModel.state == .idle)
+
+        #expect(viewModel.isWelcomeRequired)
+
+        security.configure { $0.loginError = .invalidCredentials }
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+
+        expectFailed(.invalidCredentials)
+        #expect(!viewModel.isGuestModeChosen)
+        #expect(viewModel.isWelcomeRequired)
+    }
+
+    // MARK: - A sign-in answered after it was abandoned
+
+    @Test(.timeLimit(.minutes(1)))
+    func `A sign-in abandoned for guest mode whose answer arrives afterwards is logged out, and guest mode stays`() async throws {
+        security.configure { $0.holdsLogin = true }
+        let viewModel = viewModel
+
+        let signingIn = Task { await viewModel.signIn(email: Self.email, password: Self.longEnough) }
+        try #require(await security.waitUntilLoginHeld(orUntilFinished: signingIn))
+        viewModel.continueAsGuest()
+        // The server accepted the credentials: the fake stores the session, as the Keychain would.
+        security.releaseLogin()
+        await signingIn.value
+
+        #expect(viewModel.state == .guest)
+        #expect(viewModel.isGuestModeChosen)
+        #expect(security.calls(.logout) == 1)
+        #expect(security.snapshot.token == nil)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `A sign-in replaced by another sign-in is logged out when its answer arrives afterwards, so two accounts never mix`() async throws {
+        security.configure { $0.holdsLogin = true }
+        let viewModel = viewModel
+
+        let first = Task { await viewModel.signIn(email: Self.earlierEmail, password: Self.longEnough) }
+        try #require(await security.waitUntilLoginHeld(orUntilFinished: first))
+        security.configure { $0.holdsLogin = false }
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+        try #require(viewModel.state == .authenticated(email: Self.email))
+        security.releaseLogin()
+        await first.value
+
+        // The late answer stored the first account over the second one. Undoing it costs the second
+        // sign-in its token, which the next request turns into an expired session; keeping it would
+        // send the second account's collection with the first account's token.
+        #expect(security.calls(.logout) == 1)
+        #expect(security.snapshot.token == nil)
+        #expect(security.snapshot.email == nil)
+    }
+
+    // MARK: - restoreSession on an unusable session
+
+    @Test(arguments: [AuthError.invalidToken, .keychain(SessionViewModelTests.keychainFailure)])
+    func `restoreSession whose renewal fails with an unusable token forgets it and ends in idle with the expired-session message`(failure: AuthError) async {
+        storeEarlierSession()
+        security.configure { $0.refreshError = failure }
+
+        await viewModel.restoreSession()
+
+        #expect(viewModel.state == .idle)
+        #expect(!viewModel.isAuthenticated)
+        #expect(viewModel.expiredMessage == AuthError.sessionExpired.errorDescription)
+        #expect(security.calls(.clearToken) == 1)
+        #expect(security.snapshot.token == nil)
+        #expect(security.calls(.logout) == 0)
+    }
+
+    @Test func `restoreSession that cannot read the Keychain tries to forget the token and ends in idle with the expired-session message`() async {
+        storeEarlierSession()
+        security.configure {
+            $0.currentTokenError = .keychain(Self.keychainFailure)
+            // The same locked Keychain refuses the removal too; the launch still ends.
+            $0.clearTokenError = .keychain(Self.keychainFailure)
+        }
+
+        await viewModel.restoreSession()
+
+        #expect(viewModel.state == .idle)
+        #expect(viewModel.expiredMessage == AuthError.sessionExpired.errorDescription)
+        #expect(security.calls(.clearToken) == 1)
+        #expect(security.calls(.refresh) == 0)
+    }
+
+    @Test(arguments: [false, true])
+    func `restoreSession with a stored token but no email forgets the token without renewing it, and follows the guest choice`(isGuestChosen: Bool) async {
+        security.configure { $0.token = Self.earlierSession }
+        let expected: SessionViewModel.State = isGuestChosen ? .guest : .idle
+        if isGuestChosen {
+            defaults.set(true, forKey: Self.guestKey)
+        }
+
+        await viewModel.restoreSession()
+
+        #expect(security.calls(.clearToken) == 1)
+        #expect(security.snapshot.token == nil)
+        #expect(security.calls(.refresh) == 0)
+        #expect(viewModel.state == expected)
+    }
+
+    @Test func `restoreSession with a stored session but the guest choice forgets the session and stays a guest`() async {
+        // Guest mode is only chosen after the last session ended, so a token next to it is one that
+        // could not be removed then.
+        storeEarlierSession()
+        defaults.set(true, forKey: Self.guestKey)
+
+        await viewModel.restoreSession()
+
+        #expect(viewModel.state == .guest)
+        #expect(security.calls(.refresh) == 0)
+        #expect(security.snapshot.token == nil)
+    }
+
+    // MARK: - restoreSession runs once
+
+    @Test func `A second restoreSession after the launch resumed guest mode reads nothing and keeps guest mode`() async throws {
+        defaults.set(true, forKey: Self.guestKey)
+        await viewModel.restoreSession()
+        try #require(viewModel.state == .guest)
+        let reads = security.calls(.currentToken)
+
+        await viewModel.restoreSession()
+
+        #expect(security.calls(.currentToken) == reads)
+        #expect(viewModel.state == .guest)
+    }
+
+    @Test func `A second restoreSession after the launch resumed the stored account neither reads nor renews again`() async throws {
+        storeEarlierSession()
+        await viewModel.restoreSession()
+        try #require(viewModel.state == .authenticated(email: Self.earlierEmail))
+        let reads = security.calls(.currentToken)
+
+        await viewModel.restoreSession()
+
+        #expect(security.calls(.currentToken) == reads)
+        #expect(security.calls(.refresh) == 1)
+        #expect(viewModel.state == .authenticated(email: Self.earlierEmail))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `restoreSession called while a sign-in waits leaves the sign-in running, and it ends authenticated`() async throws {
+        await viewModel.restoreSession()
+        try #require(viewModel.state == .idle)
+        let reads = security.calls(.currentToken)
+        security.configure { $0.holdsLogin = true }
+        let viewModel = viewModel
+
+        let signingIn = Task { await viewModel.signIn(email: Self.email, password: Self.longEnough) }
+        try #require(await security.waitUntilLoginHeld(orUntilFinished: signingIn))
+        // Another window of the app starting up.
+        await viewModel.restoreSession()
+        security.releaseLogin()
+        await signingIn.value
+
+        #expect(security.calls(.currentToken) == reads)
+        #expect(security.calls(.login) == 1)
+        #expect(viewModel.state == .authenticated(email: Self.email))
     }
 }

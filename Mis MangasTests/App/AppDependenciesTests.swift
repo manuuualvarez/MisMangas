@@ -158,5 +158,27 @@ extension SharedMockSuites {
             #expect(CollectionMockScenario.hits(.collectionUpsert) == 1)
             #expect(CollectionMockScenario.hits(.collectionList) == 0)
         }
+
+        @Test func `A pass right after signOut, before the signed-out session is applied, stays on the device`() async throws {
+            try await CollectionTestSupport.storeMangas([1], in: dependencies.syncActor, now: Self.t0)
+            CollectionMockScenario.set(.collectionUpsert, .status(201))
+            CollectionMockScenario.set(.collectionList, CollectionMockScenario.emptyCollection)
+            let session = dependencies.session
+            await session.signIn(email: "reader@example.com", password: Self.eightCharacters)
+            try #require(session.isAuthenticated)
+            await dependencies.applySession(authenticated: true)
+
+            await session.signOut()
+            try #require(session.state == .idle)
+            // Nothing applies the signed-out session here: the view has not reacted yet. A change
+            // saved in that gap waits in the queue like any change saved without a session.
+            try await dependencies.syncService.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false)
+            try #require(try operations().map(\.mangaID) == [1])
+
+            _ = try await dependencies.syncCoordinator.synchronize()
+
+            #expect(CollectionMockScenario.totalHits() == 0)
+            #expect(try operations().map(\.mangaID) == [1])
+        }
     }
 }

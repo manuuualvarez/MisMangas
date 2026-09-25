@@ -27,6 +27,9 @@ struct MainTabView: View {
                     pendingCatalogMode: $pendingCatalogMode
                 )
             }
+            Tab("Profile", systemImage: "person.crop.circle", value: .profile) {
+                ProfileView()
+            }
             Tab(value: .search, role: .search) {
                 SearchView(syncService: dependencies.syncService)
             }

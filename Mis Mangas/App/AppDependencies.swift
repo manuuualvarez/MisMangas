@@ -31,6 +31,9 @@ final class AppDependencies {
     let session: SessionViewModel
     /// Whether the coordinator runs the signed-in service.
     private(set) var isSessionActive = false
+    /// The service for a session: signed in, it reaches the user's collection on the server
+    /// through `collectionRepository`; as a guest, the collection stays on the device.
+    private let makeSyncService: @MainActor (Bool) -> MangaSyncService
 
     init(
         container: ModelContainer,
@@ -46,28 +49,32 @@ final class AppDependencies {
         self.security = security
         syncActor = MangaSyncActor(modelContainer: container)
         taxonomyCache = TaxonomyCacheActor(mangaRepository: mangaRepository)
-        self.collectionRepository = collectionRepository ?? DefaultCollectionRepository(security: security)
+        let collectionRepository = collectionRepository ?? DefaultCollectionRepository(security: security)
+        self.collectionRepository = collectionRepository
         syncService = MangaSyncService(syncActor: syncActor, mangaRepository: mangaRepository, taxonomyCache: taxonomyCache)
         syncCoordinator = SyncCoordinator(service: syncService)
-        session = SessionViewModel(security: security, syncCoordinator: syncCoordinator, syncActor: syncActor, defaults: defaults)
+        makeSyncService = { [syncActor, taxonomyCache] authenticated in
+            MangaSyncService(
+                syncActor: syncActor,
+                mangaRepository: mangaRepository,
+                taxonomyCache: taxonomyCache,
+                collectionRepository: authenticated ? collectionRepository : nil
+            )
+        }
+        session = SessionViewModel(
+            security: security,
+            syncCoordinator: syncCoordinator,
+            syncActor: syncActor,
+            defaults: defaults,
+            makeSyncService: makeSyncService
+        )
     }
 
     /// Follows a change of session: the coordinator stops the passes of the previous one and
     /// continues with the service of the new one.
     func applySession(authenticated: Bool) async {
         isSessionActive = authenticated
-        await syncCoordinator.replaceService(makeSyncService(authenticated: authenticated))
-    }
-
-    /// The service for a session: signed in, it reaches the user's collection on the server
-    /// through `collectionRepository`; as a guest, the collection stays on the device.
-    private func makeSyncService(authenticated: Bool) -> MangaSyncService {
-        MangaSyncService(
-            syncActor: syncActor,
-            mangaRepository: mangaRepository,
-            taxonomyCache: taxonomyCache,
-            collectionRepository: authenticated ? collectionRepository : nil
-        )
+        await syncCoordinator.replaceService(makeSyncService(authenticated))
     }
 
     /// The real store in the App Group container and the real backend.
