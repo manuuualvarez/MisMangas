@@ -10,7 +10,7 @@
 /// that save. The running task belongs to the coordinator, so a caller that goes away never
 /// cancels a pass half-way through the queue.
 actor SyncCoordinator {
-    private let service: MangaSyncService
+    private var service: MangaSyncService
     /// The running passes, if any. Its result carries the typed error of the last pass.
     private var running: Task<Result<SyncResult, SyncError>, Never>?
     /// Set by every request; the running task keeps passing while it finds it set.
@@ -36,12 +36,24 @@ actor SyncCoordinator {
     /// Cancels the running passes and waits until they are over: nothing is sent after it
     /// returns. Required before the session changes (sign-out, a different account), since a
     /// pass holds the operations it drained in memory. The queue keeps what was not sent. A request
-    /// made while it stops joins the stopping task and is not replayed; the first one after it
-    /// returns starts a fresh pass.
+    /// made while it stops is dropped; the first one after it returns starts a fresh pass. A task
+    /// that a request started while the previous one was ending is stopped too: it returns only
+    /// when none is running.
     func stop() async {
         needsAnotherPass = false
-        running?.cancel()
-        _ = await running?.value
+        while let task = running {
+            task.cancel()
+            _ = await task.value
+        }
+    }
+
+    /// Hands the passes to `service` (the session changed) after stopping the running ones: nothing
+    /// is sent through the previous service once it returns. The service is replaced before
+    /// stopping, so a request that arrives meanwhile never starts a pass on the previous one; like
+    /// any request made while stopping, it is dropped.
+    func replaceService(_ service: MangaSyncService) async {
+        self.service = service
+        await stop()
     }
 
     private func startIfNeeded() -> Task<Result<SyncResult, SyncError>, Never> {
@@ -59,6 +71,10 @@ actor SyncCoordinator {
     private func runPasses() async -> Result<SyncResult, SyncError> {
         defer { running = nil }
         while true {
+            // A task cancelled before its first pass sends nothing.
+            if Task.isCancelled {
+                return .success(SyncResult(applied: 0, blocked: 0, rejected: [], upserted: 0, removed: 0))
+            }
             needsAnotherPass = false
             let result: SyncResult
             do {

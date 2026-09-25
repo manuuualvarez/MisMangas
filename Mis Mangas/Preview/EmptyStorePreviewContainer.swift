@@ -18,9 +18,11 @@ struct EmptyStorePreviewContainer: PreviewModifier {
     }
 
     func body(content: Content, context: ModelContainer) -> some View {
-        content
+        let dependencies = AppDependencies.preview(container: context, catalog: catalog)
+        return content
             .modelContainer(context)
-            .environment(AppDependencies.preview(container: context, catalog: catalog))
+            .environment(dependencies)
+            .environment(dependencies.session)
     }
 }
 

@@ -13,10 +13,16 @@ import Synchronization
 /// ViewModels), whose tests need to decide what the session does rather than exercise it. Every
 /// requirement is replaced: nothing reaches the network or a store.
 ///
-/// The fake keeps a tiny session model so sequences read naturally: a successful `login` or
-/// `register` stores `issuedToken` and the email, `refresh` replaces a stored token with
-/// `issuedToken`, `clearToken` forgets the token and keeps the email, `logout` forgets both.
+/// The fake keeps a tiny session model so sequences read naturally: a successful `login` stores
+/// `issuedToken` and the email, `refresh` replaces a stored token with `issuedToken`, `clearToken`
+/// forgets the token and keeps the email, `logout` forgets both. `register` only counts the call
+/// and applies `registerError`: creating an account does not sign in, so it stores nothing.
 /// Each operation can be made to fail with a configured `AuthError`, and every call is counted.
+///
+/// With `holdsRefresh`, `refresh` stays in flight until the test calls `releaseRefresh(throwing:)`,
+/// so a test decides what happens while a session is being restored. `waitUntilRefreshHeld(orUntilFinished:)`
+/// returns once one is held. Cancelling the caller ends a held refresh at once with
+/// `AuthError.server(.cancelled)`, as a cancelled request does.
 ///
 /// Configure with `configure { $0.… = … }` and read the oracle with `calls(_:)` and `snapshot`.
 /// Both are `nonisolated`, so tests on any actor use them without `await`.
@@ -40,7 +46,7 @@ final class FakeSecurity: SecurityData {
         var token: String?
         /// Email returned by `storedEmail`; survives `clearToken`.
         var email: String?
-        /// Token stored by a successful `login`, `register` or `refresh`.
+        /// Token stored by a successful `login` or `refresh`.
         var issuedToken = "fake.issued.token"
         var appToken = "fake-app-token"
         var registerError: AuthError?
@@ -52,11 +58,19 @@ final class FakeSecurity: SecurityData {
         var clearTokenError: AuthError?
         var logoutError: AuthError?
         var validateJWTResult: Result<JWTPayload, AuthError> = .failure(.invalidToken)
+        /// `refresh` waits for `releaseRefresh(throwing:)` instead of answering at once.
+        var holdsRefresh = false
     }
 
     private struct State {
         var behavior: Behavior
         var calls: [Method: Int] = [:]
+        /// The `refresh` in flight while `holdsRefresh` is set.
+        var heldRefresh: CheckedContinuation<Result<Void, AuthError>, Never>?
+        /// A test suspended in `waitUntilRefreshHeld(orUntilFinished:)`.
+        var refreshWaiter: CheckedContinuation<Void, Never>?
+        /// The watched task finished before the wait suspended: the wait returns at once.
+        var isRefreshWaitOver = false
     }
 
     let store: any SecureStore
@@ -83,6 +97,112 @@ final class FakeSecurity: SecurityData {
     /// The current scripted state (token and email after the calls so far).
     nonisolated var snapshot: Behavior {
         state.withLock { $0.behavior }
+    }
+
+    /// Returns once a `refresh` is held, or as soon as `task` finishes, so a test whose code
+    /// under test never renews fails instead of hanging. Returns whether a `refresh` is held.
+    nonisolated func waitUntilRefreshHeld<Success: Sendable, Failure: Error>(orUntilFinished task: Task<Success, Failure>) async -> Bool {
+        let watcher = Task {
+            _ = await task.result
+            self.stopWaitingForRefresh()
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let isReady = state.withLock { state -> Bool in
+                if state.heldRefresh != nil || state.isRefreshWaitOver {
+                    return true
+                }
+                state.refreshWaiter = continuation
+                return false
+            }
+            if isReady {
+                continuation.resume()
+            }
+        }
+        watcher.cancel()
+        return state.withLock { state in
+            state.isRefreshWaitOver = false
+            return state.heldRefresh != nil
+        }
+    }
+
+    /// Answers the held `refresh`: with `error`, or else as an unheld one would. Does nothing when
+    /// none is held (its caller was cancelled and it already ended).
+    nonisolated func releaseRefresh(throwing error: AuthError? = nil) {
+        let released = state.withLock { state -> (CheckedContinuation<Result<Void, AuthError>, Never>, Result<Void, AuthError>)? in
+            guard let held = state.heldRefresh else {
+                return nil
+            }
+            state.heldRefresh = nil
+            if let error {
+                return (held, .failure(error))
+            }
+            return (held, Self.completeRefresh(&state.behavior))
+        }
+        if let released {
+            released.0.resume(returning: released.1)
+        }
+    }
+
+    private nonisolated func resumeRefreshWaiter() {
+        let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
+            let waiter = state.refreshWaiter
+            state.refreshWaiter = nil
+            return waiter
+        }
+        waiter?.resume()
+    }
+
+    private nonisolated func stopWaitingForRefresh() {
+        let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
+            guard let waiter = state.refreshWaiter else {
+                state.isRefreshWaitOver = true
+                return nil
+            }
+            state.refreshWaiter = nil
+            return waiter
+        }
+        waiter?.resume()
+    }
+
+    /// Parks the calling `refresh` until `releaseRefresh(throwing:)` or its cancellation.
+    private nonisolated func heldRefreshOutcome() async -> Result<Void, AuthError> {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, AuthError>, Never>) in
+                // Checked under the lock the cancellation handler also takes: either the handler
+                // finds the continuation parked, or this sees the task already cancelled.
+                let isCancelled = state.withLock { state -> Bool in
+                    if Task.isCancelled {
+                        return true
+                    }
+                    state.heldRefresh = continuation
+                    return false
+                }
+                if isCancelled {
+                    continuation.resume(returning: .failure(.server(.cancelled)))
+                } else {
+                    resumeRefreshWaiter()
+                }
+            }
+        } onCancel: {
+            let held = self.state.withLock { state -> CheckedContinuation<Result<Void, AuthError>, Never>? in
+                let held = state.heldRefresh
+                state.heldRefresh = nil
+                return held
+            }
+            held?.resume(returning: .failure(.server(.cancelled)))
+        }
+    }
+
+    /// What an answered `refresh` does to the scripted session.
+    private nonisolated static func completeRefresh(_ behavior: inout Behavior) -> Result<Void, AuthError> {
+        if let error = behavior.refreshError {
+            return .failure(error)
+        }
+        guard behavior.token != nil else {
+            return .failure(.sessionExpired)
+        }
+        behavior.token = behavior.issuedToken
+        return .success(())
     }
 
     /// Counts the call and applies `body` to the behavior under the lock.
@@ -112,8 +232,6 @@ final class FakeSecurity: SecurityData {
             if let error = behavior.registerError {
                 return .failure(error)
             }
-            behavior.token = behavior.issuedToken
-            behavior.email = email
             return .success(())
         }.get()
     }
@@ -130,16 +248,12 @@ final class FakeSecurity: SecurityData {
     }
 
     func refresh() async throws(AuthError) {
-        try record(.refresh) { behavior -> Result<Void, AuthError> in
-            if let error = behavior.refreshError {
-                return .failure(error)
-            }
-            guard behavior.token != nil else {
-                return .failure(.sessionExpired)
-            }
-            behavior.token = behavior.issuedToken
-            return .success(())
-        }.get()
+        let isHeld = record(.refresh) { $0.holdsRefresh }
+        if isHeld {
+            try await heldRefreshOutcome().get()
+        } else {
+            try state.withLock { Self.completeRefresh(&$0.behavior) }.get()
+        }
     }
 
     func validToken() async throws(AuthError) -> String {

@@ -182,5 +182,53 @@ extension SharedMockSuites {
             #expect(try CollectionMockScenario.uploadedMangaIDs() == ids)
             #expect(try operations().isEmpty)
         }
+
+        // MARK: - replaceService
+
+        /// Token presented by the service built in `init`.
+        private static let originalToken = "example.coordinator.token"
+        /// Token presented by the service that replaces it.
+        private static let replacementToken = "example.replacement.token"
+
+        /// A service over the same store whose repository presents `token`, so every request it
+        /// sends carries `Bearer <token>` and tells it apart from the service built in `init`.
+        private func service(presenting token: String) -> MangaSyncService {
+            let mangaRepository = DefaultMangaRepositoryTest()
+            return MangaSyncService(
+                syncActor: actor,
+                mangaRepository: mangaRepository,
+                taxonomyCache: TaxonomyCacheActor(mangaRepository: mangaRepository),
+                collectionRepository: DefaultCollectionRepositoryTest(security: FakeSecurity(token: token))
+            )
+        }
+
+        @Test func `replaceService stops the pass in flight, and the next synchronize reaches the server only through the new service`() async throws {
+            try await CollectionTestSupport.storeMangas([1, 2], in: actor, now: Self.t0)
+            try await queueUpsert(mangaID: 1, secondsAfterStart: 1)
+            try await queueUpsert(mangaID: 2, secondsAfterStart: 2)
+            CollectionMockScenario.setSequence(.collectionUpsert, [.held])
+            CollectionMockScenario.set(.collectionUpsert, .status(201))
+            CollectionMockScenario.set(.collectionList, CollectionMockScenario.emptyCollection)
+            let coordinator = coordinator
+
+            let caller = Task { try await coordinator.synchronize() }
+            try #require(await CatalogMockScenario.waitUntilHeld(.collectionUpsert, orUntilFinished: caller))
+            await coordinator.replaceService(service(presenting: Self.replacementToken))
+            // A pass that was not stopped would carry on from here and upload the rest.
+            CatalogMockScenario.release(.collectionUpsert, with: .status(201))
+            _ = await caller.result
+
+            #expect(CollectionMockScenario.totalHits() == 1)
+
+            let result = try await coordinator.synchronize()
+
+            #expect(result.applied == 2)
+            #expect(try CollectionMockScenario.uploadedMangaIDs() == [1, 1, 2])
+            let original = "Bearer \(Self.originalToken)"
+            let replacement = "Bearer \(Self.replacementToken)"
+            #expect(CollectionMockScenario.requests(.collectionUpsert).map { $0.header("Authorization") } == [original, replacement, replacement])
+            #expect(CollectionMockScenario.requests(.collectionList).map { $0.header("Authorization") } == [replacement])
+            #expect(try operations().isEmpty)
+        }
     }
 }

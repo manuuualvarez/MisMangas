@@ -25,6 +25,7 @@ struct MisMangasApp: App {
                 RootView()
                     .modelContainer(dependencies.container)
                     .environment(dependencies)
+                    .environment(dependencies.session)
             case let .failure(error):
                 PersistenceFailureView(error: error) {
                     startup = Self.start()
