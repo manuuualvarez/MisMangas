@@ -23,6 +23,9 @@ final class CollectionViewModel {
     /// Numbers each reading of the coordinator: readings overlap (a pass ends while the user syncs),
     /// and only the last one issued is shown.
     private var readingSequence = 0
+    /// Tells the latest link from one a newer link cancelled, whose ending must not touch the
+    /// newer one's state.
+    private var deepLinkSequence = 0
     private(set) var isSaving = false
     /// The last failed write; cleared by the next one that succeeds.
     private(set) var error: PersistenceError?
@@ -52,6 +55,8 @@ final class CollectionViewModel {
     private(set) var deepLinkError: APIError?
     /// Whether the collection shows `deepLinkError`.
     var isDeepLinkErrorPresented = false
+    /// Whether the manga of the last link is being brought from the server.
+    private(set) var isOpeningDeepLink = false
 
     /// `presentsRejections`: whether this screen shows the refusal notice. Only one screen does, so
     /// the notice is never raised where nothing can dismiss it.
@@ -167,8 +172,21 @@ final class CollectionViewModel {
     /// missing. Returns whether the collection can show it. A store that cannot be read counts as
     /// not holding it; a cancelled link fails nothing.
     func prepareDeepLinkedManga(id: Int) async -> Bool {
+        deepLinkSequence += 1
+        let link = deepLinkSequence
+        // A newer link ends the wait of the previous one, whether or not it needs the server.
+        isOpeningDeepLink = false
         if (try? await syncService.hasManga(id: id)) == true {
             return true
+        }
+        // Only the latest link shows the wait, the same one its ending clears it for.
+        if link == deepLinkSequence {
+            isOpeningDeepLink = true
+        }
+        defer {
+            if link == deepLinkSequence {
+                isOpeningDeepLink = false
+            }
         }
         do {
             try await syncService.refreshDetail(mangaID: id)

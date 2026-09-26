@@ -72,6 +72,28 @@ extension SharedMockSuites {
             #expect(!viewModel.isDeepLinkErrorPresented)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `A link to a stored manga stops showing that a previous link is opening`() async throws {
+            _ = try await actor.cacheDetail(CollectionTestSupport.monster())
+            CatalogMockScenario.set(.mangaByID, .held)
+            let viewModel = viewModel
+            // Id 2 is not in the store, so this link waits on the server.
+            let missing = Task {
+                await viewModel.prepareDeepLinkedManga(id: 2)
+            }
+            try #require(await CatalogMockScenario.waitUntilHeld(.mangaByID, orUntilFinished: missing))
+            try #require(viewModel.isOpeningDeepLink)
+
+            let isReady = await viewModel.prepareDeepLinkedManga(id: Self.monsterID)
+
+            #expect(isReady)
+            #expect(CatalogMockScenario.hits(.mangaByID) == 1)
+            #expect(!viewModel.isOpeningDeepLink)
+
+            missing.cancel()
+            _ = await missing.value
+        }
+
         // MARK: - Missing manga
 
         @Test func `A manga missing from the store is requested by id once and stored before it is reported ready`() async throws {
@@ -113,6 +135,55 @@ extension SharedMockSuites {
             #expect(try storedMonster() == nil)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `A missing manga shows it is opening while its request is in flight and stops once it is stored`() async throws {
+            CatalogMockScenario.set(.mangaByID, .held)
+            let viewModel = viewModel
+            let preparation = Task {
+                await viewModel.prepareDeepLinkedManga(id: Self.monsterID)
+            }
+            let isInFlight = await CatalogMockScenario.waitUntilHeld(.mangaByID, orUntilFinished: preparation)
+            try #require(isInFlight)
+
+            #expect(viewModel.isOpeningDeepLink)
+
+            CatalogMockScenario.release(.mangaByID, with: .fixture("manga_monster.json"))
+            let isReady = await preparation.value
+
+            #expect(isReady)
+            #expect(!viewModel.isOpeningDeepLink)
+            let stored = try #require(try storedMonster())
+            #expect(stored.title == Self.monsterTitle)
+        }
+
+        @Test(.timeLimit(.minutes(1)), arguments: [
+            (.status(500), .serverError),
+            (.transportError(.notConnectedToInternet), .transport),
+        ] as [(CatalogMockScenario.Behavior, APIErrorCase)])
+        func `A missing manga whose request fails stops showing it is opening and shows the error`(
+            response: CatalogMockScenario.Behavior,
+            expected: APIErrorCase
+        ) async throws {
+            CatalogMockScenario.set(.mangaByID, .held)
+            let viewModel = viewModel
+            let preparation = Task {
+                await viewModel.prepareDeepLinkedManga(id: Self.monsterID)
+            }
+            let isInFlight = await CatalogMockScenario.waitUntilHeld(.mangaByID, orUntilFinished: preparation)
+            try #require(isInFlight)
+
+            #expect(viewModel.isOpeningDeepLink)
+
+            CatalogMockScenario.release(.mangaByID, with: response)
+            let isReady = await preparation.value
+
+            #expect(!isReady)
+            #expect(!viewModel.isOpeningDeepLink)
+            let error = try #require(viewModel.deepLinkError)
+            #expect(expected.matches(error), "Expected APIError.\(expected), got \(error)")
+            #expect(viewModel.isDeepLinkErrorPresented)
+        }
+
         // MARK: - Cancellation
 
         @Test(.timeLimit(.minutes(1)))
@@ -135,6 +206,54 @@ extension SharedMockSuites {
             #expect(viewModel.deepLinkError == nil)
             #expect(!viewModel.isDeepLinkErrorPresented)
             #expect(try storedMonster() == nil)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Cancelling the link while its request is in flight stops showing it is opening`() async throws {
+            CatalogMockScenario.set(.mangaByID, .held)
+            let viewModel = viewModel
+            let preparation = Task {
+                await viewModel.prepareDeepLinkedManga(id: Self.monsterID)
+            }
+            let isInFlight = await CatalogMockScenario.waitUntilHeld(.mangaByID, orUntilFinished: preparation)
+            try #require(isInFlight)
+
+            #expect(viewModel.isOpeningDeepLink)
+
+            preparation.cancel()
+            _ = await preparation.value
+
+            #expect(!viewModel.isOpeningDeepLink)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A link cancelled by a newer one does not stop the newer one from showing it is opening`() async throws {
+            CatalogMockScenario.set(.mangaByID, .held)
+            let viewModel = viewModel
+            let first = Task {
+                await viewModel.prepareDeepLinkedManga(id: Self.monsterID)
+            }
+            try #require(await CatalogMockScenario.waitUntilHeld(.mangaByID, orUntilFinished: first))
+            let second = Task {
+                await viewModel.prepareDeepLinkedManga(id: 2)
+            }
+            // Both requests parked in the mock, so the first one's cancellation lands while the
+            // second one is already in flight.
+            try #require(await AsyncCondition.waitUntil { CatalogMockScenario.heldCount(.mangaByID) == 2 })
+
+            first.cancel()
+            _ = await first.value
+            // The cancellation reached the mock, so the release below can only answer the second one.
+            try #require(await AsyncCondition.waitUntil { CatalogMockScenario.heldCount(.mangaByID) == 1 })
+
+            #expect(viewModel.isOpeningDeepLink)
+
+            // Any successful body will do: only the flag is checked, not what gets stored.
+            CatalogMockScenario.release(.mangaByID, with: .fixture("manga_monster.json"))
+            let isReady = await second.value
+
+            #expect(isReady)
+            #expect(!viewModel.isOpeningDeepLink)
         }
     }
 }

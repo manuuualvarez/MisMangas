@@ -15,7 +15,8 @@ import SwiftUI
 /// a chip in the detail applies its category there. With a session, the list syncs with a pull or
 /// the toolbar's sync button (which counts the pending changes), stays current whenever a pass
 /// ends, and says in an alert when the server refused changes or the device could not sync. A link
-/// to a manga selects it, brought from the server first when the device does not hold it.
+/// to a manga selects it, brought from the server first when the device does not hold it, saying it
+/// is opening meanwhile.
 struct MyCollectionView: View {
     @Query(filter: #Predicate<Manga> { $0.inCollection == true }, sort: \Manga.title)
     private var mangas: [Manga]
@@ -171,15 +172,6 @@ struct MyCollectionView: View {
             } message: { error in
                 Text(error.localizedDescription)
             }
-            .alert(
-                "Couldn't open manga",
-                isPresented: $viewModel.isDeepLinkErrorPresented,
-                presenting: viewModel.deepLinkError
-            ) { _ in
-                Button("OK") {}
-            } message: { error in
-                Text(error.localizedDescription)
-            }
             .navigationSplitViewColumnWidth(min: 380, ideal: 520, max: 720)
         } detail: {
             if let selectedManga {
@@ -190,6 +182,31 @@ struct MyCollectionView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        // On the split view and not the list: a link can arrive while the pushed detail hides the list.
+        .alert(
+            "Couldn't open manga",
+            isPresented: $viewModel.isDeepLinkErrorPresented,
+            presenting: viewModel.deepLinkError
+        ) { _ in
+            Button("OK") {}
+        } message: { error in
+            Text(error.localizedDescription)
+        }
+        .overlay {
+            if viewModel.isOpeningDeepLink {
+                ProgressView("Opening…")
+                    // The default secondary label measured 4.2:1 over the material.
+                    .foregroundStyle(.primary)
+                    .padding()
+                    .background(.regularMaterial, in: .rect(cornerRadius: 12))
+            }
+        }
+        // The overlay takes no focus: say that the wait began.
+        .onChange(of: viewModel.isOpeningDeepLink) { _, isOpening in
+            if isOpening {
+                AccessibilityNotification.Announcement(String(localized: "Opening…")).post()
+            }
+        }
         .task(id: pendingMangaID) {
             guard let mangaID = pendingMangaID else {
                 return
@@ -205,6 +222,11 @@ struct MyCollectionView: View {
                 // Unreadable right after being stored: the selection stays as it was.
                 if let manga = try? modelContext.fetch(descriptor).first {
                     selectedManga = manga
+                    // Where the detail fills a column, focus stays on the list: say what opened.
+                    // Low priority is queued behind the speech in progress instead of interrupting it.
+                    var announcement = AttributedString(localized: "Opened \(manga.title)")
+                    announcement.accessibilitySpeechAnnouncementPriority = .low
+                    AccessibilityNotification.Announcement(announcement).post()
                 }
             }
             pendingMangaID = nil

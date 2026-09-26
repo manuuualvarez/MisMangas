@@ -294,6 +294,13 @@ enum CatalogMockScenario {
         state.withLock { $0.held[key]?.contains(where: { !$0.isCancelled }) == true }
     }
 
+    /// How many requests of `key` are held with their consumer still there. A cancelled consumer
+    /// gets `URLError.cancelled` before `stopLoading` marks its request, so a test that needs the
+    /// cancellation to have reached the mock waits for this count to drop.
+    static func heldCount(_ key: Key) -> Int {
+        state.withLock { $0.held[key]?.count(where: { !$0.isCancelled }) ?? 0 }
+    }
+
     private static func suspendUntilHeld(_ key: Key, token: UUID?) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let isHeld = state.withLock { state in
