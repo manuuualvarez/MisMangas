@@ -26,7 +26,10 @@ struct ProfileAccountView: View {
         @Bindable var session = session
         Form {
             Section("Account") {
-                LabeledContent("Email", value: email)
+                LabeledContent("Email") {
+                    Text(email)
+                        .foregroundStyle(.mmSecondaryLabel)
+                }
             }
             ProfileSyncStatusView(
                 pendingCount: viewModel.pendingCount,
@@ -58,31 +61,32 @@ struct ProfileAccountView: View {
                 }
                 // The system red falls below 4.5:1 on a light row.
                 .foregroundStyle(.mmDestructive)
-                .confirmationDialog("Sign out?", isPresented: $isSignOutConfirmationPresented, titleVisibility: .visible) {
-                    Button("Sign Out", role: .destructive) {
-                        Task {
-                            await session.signOut()
-                            // The whole screen gives way to the welcome screen; say why.
-                            if !session.isAuthenticated {
-                                // High priority: the welcome screen replacing this one would cut it short.
-                                var announcement = AttributedString(localized: "Signed out")
-                                announcement.accessibilitySpeechAnnouncementPriority = .high
-                                AccessibilityNotification.Announcement(announcement).post()
-                            }
-                        }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    if session.unsentChangesCount > 0 {
-                        Text("^[\(session.unsentChangesCount) unsent change](inflect: true) will be discarded. Your collection stays on this device until another account signs in.")
-                    } else {
-                        Text("Your collection stays on this device until another account signs in.")
-                    }
-                }
             }
         }
         .task {
             await viewModel.observePasses()
+        }
+        // An alert, not a dialog anchored to the row: it keeps a visible Cancel on every device.
+        .alert("Sign out?", isPresented: $isSignOutConfirmationPresented) {
+            Button("Sign Out", role: .destructive) {
+                Task {
+                    await session.signOut()
+                    // The whole screen gives way to the welcome screen; say why.
+                    if !session.isAuthenticated {
+                        // High priority: the welcome screen replacing this one would cut it short.
+                        var announcement = AttributedString(localized: "Signed out")
+                        announcement.accessibilitySpeechAnnouncementPriority = .high
+                        AccessibilityNotification.Announcement(announcement).post()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if session.unsentChangesCount > 0 {
+                Text("^[\(session.unsentChangesCount) unsent change](inflect: true) will be discarded. Your collection stays on this device until another account signs in.")
+            } else {
+                Text("Your collection stays on this device until another account signs in.")
+            }
         }
         .alert(
             "Couldn't sync",

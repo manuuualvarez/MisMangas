@@ -30,7 +30,7 @@ struct SignUpView: View {
         Form {
             Section {
                 LabeledContent("Email") {
-                    TextField("Email", text: $email, prompt: Text(verbatim: "name@example.com"))
+                    TextField("Email", text: $email, prompt: Text(verbatim: "name@example.com").foregroundStyle(.mmSecondaryLabel))
                         .textContentType(.username)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -47,14 +47,14 @@ struct SignUpView: View {
             }
             Section {
                 LabeledContent("Password") {
-                    SecureField("Password", text: $password, prompt: Text("Required"))
+                    SecureField("Password", text: $password, prompt: Text("Required").foregroundStyle(.mmSecondaryLabel))
                         .textContentType(.newPassword)
                         .submitLabel(.next)
                         .focused($focusedField, equals: .password)
                         .onSubmit { focusedField = .confirmation }
                 }
                 LabeledContent("Confirm") {
-                    SecureField("Confirm password", text: $confirmation, prompt: Text("Required"))
+                    SecureField("Confirm password", text: $confirmation, prompt: Text("Required").foregroundStyle(.mmSecondaryLabel))
                         .textContentType(.newPassword)
                         .submitLabel(.go)
                         .focused($focusedField, equals: .confirmation)
@@ -66,6 +66,7 @@ struct SignUpView: View {
                         .foregroundStyle(.mmWarning)
                 } else {
                     Text("At least 8 characters.")
+                        .foregroundStyle(.mmSecondaryLabel)
                 }
             }
             Section {
@@ -83,7 +84,8 @@ struct SignUpView: View {
                 }
                 .disabled(!canSubmit)
                 .accessibilityLabel(session.isAuthenticating ? Text("Creating account") : Text("Create Account"))
-                .accessibilityHint(canSubmit ? Text(verbatim: "") : Text(Self.missingInput))
+                // While the server answers, the button is waiting, not missing input.
+                .accessibilityHint(canSubmit || session.isAuthenticating ? Text(verbatim: "") : Text(Self.missingInput))
             }
         }
         .navigationTitle("Create Account")
@@ -96,13 +98,19 @@ struct SignUpView: View {
             if previous == .email {
                 isEmailTouched = true
             }
+            // A mismatch is announced once the confirmation is left, not on its first letter,
+            // where it would interrupt the echo of the typing.
+            if previous == .confirmation,
+               let issue = SessionViewModel.confirmationIssue(password: password, confirmation: confirmation) {
+                AccessibilityNotification.Announcement(issue).post()
+            }
         }
         .onChange(of: emailMessage) { _, message in
             if let message {
                 AccessibilityNotification.Announcement(message).post()
             }
         }
-        .onChange(of: passwordMessage) { _, message in
+        .onChange(of: session.passwordFailureMessage) { _, message in
             if let message {
                 AccessibilityNotification.Announcement(message).post()
             }
@@ -136,6 +144,12 @@ struct SignUpView: View {
         }
         Task {
             await session.signUp(email: email, password: password)
+            // The tabs replacing this screen would cut a normal announcement short.
+            if session.isAuthenticated {
+                var announcement = AttributedString(localized: "Signed in")
+                announcement.accessibilitySpeechAnnouncementPriority = .high
+                AccessibilityNotification.Announcement(announcement).post()
+            }
         }
     }
 }

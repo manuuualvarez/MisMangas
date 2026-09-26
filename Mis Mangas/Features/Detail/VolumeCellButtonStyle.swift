@@ -20,7 +20,7 @@ struct VolumeCellButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 44)
             // A ternary gives the compiler no member to infer against, so the colors are spelled out.
             .foregroundStyle(isSelected ? Color.mmOnAccent : Color.primary)
-            .background(isSelected ? Color.accentColor : Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            .background(isSelected ? Color.mmAccentFill : Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }

@@ -136,6 +136,8 @@ final class SessionViewModel {
     /// Builds the sync service of a session, signed in or not, for the coordinator.
     private let makeSyncService: @MainActor (String?) -> MangaSyncService
     private var currentTask: Task<Void, Never>?
+    /// The sign-out in flight, if the operation in flight is one.
+    private var signOutTask: Task<Void, Never>?
 
     init(
         security: any SecurityData,
@@ -175,7 +177,7 @@ final class SessionViewModel {
     }
 
     func signOut() async {
-        await replaceCurrentTask { [weak self] in
+        await replaceCurrentTask(signsOut: true) { [weak self] in
             await self?.logout()
         }
     }
@@ -194,6 +196,13 @@ final class SessionViewModel {
     /// Ends a session the server no longer accepts. The email stays stored for the next launch,
     /// and the queued changes keep their account: only that account sends them if it returns.
     func expire() async {
+        // A confirmed sign-out already ends the session: replacing it would stop it before it
+        // discards the unsent changes it promised to discard. Only a sign-out that failed, and
+        // left the session open, still has it expire.
+        if let signOutTask {
+            await signOutTask.value
+            guard isAuthenticated else { return }
+        }
         await replaceCurrentTask { [weak self] in
             await self?.markExpired()
         }
@@ -216,11 +225,18 @@ final class SessionViewModel {
     // MARK: - Operations
 
     /// Cancels the operation in flight, then runs `operation` as the new one and waits for it.
-    private func replaceCurrentTask(_ operation: @escaping @MainActor @Sendable () async -> Void) async {
+    private func replaceCurrentTask(
+        signsOut: Bool = false,
+        _ operation: @escaping @MainActor @Sendable () async -> Void
+    ) async {
         currentTask?.cancel()
         let task = Task { await operation() }
         currentTask = task
+        signOutTask = signsOut ? task : nil
         await task.value
+        if signOutTask == task {
+            signOutTask = nil
+        }
     }
 
     private func authenticate(email: String, password: String, createsAccount: Bool) async {

@@ -18,6 +18,7 @@ struct WelcomeActionsView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .tint(.mmAccentFill)
             NavigationLink(value: AuthRoute.signUp) {
                 Text("Create Account")
                     .frame(maxWidth: .infinity)

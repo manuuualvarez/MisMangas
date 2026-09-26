@@ -63,6 +63,8 @@ struct CatalogListView: View {
             }
         }
         .listStyle(.plain)
+        // The selected row is a fill under white text: the fill accent, not the text one.
+        .tint(.mmAccentFill)
         // With rows on screen the failure lands below the fold without taking focus: tell
         // assistive technologies about it (with no rows the full-screen error state already does).
         // The error carries an `any Error`, so the message is what gets observed.

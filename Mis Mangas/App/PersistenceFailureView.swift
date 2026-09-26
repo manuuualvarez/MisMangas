@@ -24,6 +24,7 @@ struct PersistenceFailureView: View {
                 retry()
             }
             .buttonStyle(.borderedProminent)
+            .tint(.mmAccentFill)
         }
     }
 }

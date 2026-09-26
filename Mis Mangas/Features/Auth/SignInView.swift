@@ -25,7 +25,7 @@ struct SignInView: View {
         Form {
             Section {
                 LabeledContent("Email") {
-                    TextField("Email", text: $email, prompt: Text(verbatim: "name@example.com"))
+                    TextField("Email", text: $email, prompt: Text(verbatim: "name@example.com").foregroundStyle(.mmSecondaryLabel))
                         .textContentType(.username)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -35,7 +35,7 @@ struct SignInView: View {
                         .onSubmit { focusedField = .password }
                 }
                 LabeledContent("Password") {
-                    SecureField("Password", text: $password, prompt: Text("Required"))
+                    SecureField("Password", text: $password, prompt: Text("Required").foregroundStyle(.mmSecondaryLabel))
                         .textContentType(.password)
                         .submitLabel(.go)
                         .focused($focusedField, equals: .password)
@@ -62,7 +62,8 @@ struct SignInView: View {
                 }
                 .disabled(!canSubmit)
                 .accessibilityLabel(session.isAuthenticating ? Text("Signing in") : Text("Sign In"))
-                .accessibilityHint(canSubmit ? Text(verbatim: "") : Text(Self.missingInput))
+                // While the server answers, the button is waiting, not missing input.
+                .accessibilityHint(canSubmit || session.isAuthenticating ? Text(verbatim: "") : Text(Self.missingInput))
             }
         }
         .navigationTitle("Sign In")
@@ -94,6 +95,12 @@ struct SignInView: View {
         }
         Task {
             await session.signIn(email: email, password: password)
+            // The tabs replacing this screen would cut a normal announcement short.
+            if session.isAuthenticated {
+                var announcement = AttributedString(localized: "Signed in")
+                announcement.accessibilitySpeechAnnouncementPriority = .high
+                AccessibilityNotification.Announcement(announcement).post()
+            }
         }
     }
 }

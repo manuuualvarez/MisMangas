@@ -76,6 +76,8 @@ struct CatalogFiltersView: View {
                         applyCatalogMode?.apply(draft.applied(to: mode))
                         dismiss()
                     }
+                    // The confirming button is filled: the fill accent keeps its symbol legible.
+                    .tint(.mmAccentFill)
                 }
             }
         }

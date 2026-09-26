@@ -21,6 +21,8 @@ extension SharedMockSuites {
     @Suite("Security")
     struct SecurityTests {
         private static let email = SessionTestTokenFactory.email
+        /// A second account, whose token must never be resumed as the session of `email`.
+        private static let otherEmail = "other@example.com"
         private static let password = "example-password-8"
         /// base64("reader@example.com:example-password-8"), computed outside the app.
         private static let basicCredentials = "cmVhZGVyQGV4YW1wbGUuY29tOmV4YW1wbGUtcGFzc3dvcmQtOA=="
@@ -388,6 +390,112 @@ extension SharedMockSuites {
             }
 
             #expect(SessionMockScenario.totalHits() == 0)
+        }
+
+        // MARK: - stored session changed while a renewal is in flight
+
+        @Test func `refresh whose session is cleared while the renewal is in flight throws sessionExpired and stores no token`() async throws {
+            seedSession(token: SessionTestTokenFactory.aging())
+            SessionMockScenario.set(.jwtRefresh, .held)
+            let security = security
+
+            let refreshing = Task { try await security.refresh() }
+            try #require(await SessionMockScenario.waitUntilHeld(.jwtRefresh, orUntilFinished: refreshing))
+            // Another request got a 401 meanwhile and ended the session.
+            try await security.clearToken()
+            SessionMockScenario.releaseWithToken(.jwtRefresh, SessionTestTokenFactory.fresh())
+
+            await expectAuthError(.sessionExpired) {
+                try await refreshing.value
+            }
+
+            #expect(SessionMockScenario.hits(.jwtRefresh) == 1)
+            #expect(store.storedString("jwt") == nil)
+            #expect(store.storedString("userEmail") == Self.email)
+        }
+
+        @Test func `refresh whose token is replaced while the renewal is in flight throws sessionExpired and keeps the replacement`() async throws {
+            seedSession(token: SessionTestTokenFactory.aging())
+            SessionMockScenario.set(.jwtRefresh, .held)
+            let replacement = SessionTestTokenFactory.makeJWT(expiringIn: 20 * 3600)
+            let renewed = SessionTestTokenFactory.fresh()
+            let security = security
+
+            let refreshing = Task { try await security.refresh() }
+            try #require(await SessionMockScenario.waitUntilHeld(.jwtRefresh, orUntilFinished: refreshing))
+            // A new sign-in stored its own token meanwhile.
+            store.seed(replacement, key: "jwt")
+            SessionMockScenario.releaseWithToken(.jwtRefresh, renewed)
+
+            await expectAuthError(.sessionExpired) {
+                try await refreshing.value
+            }
+
+            #expect(SessionMockScenario.hits(.jwtRefresh) == 1)
+            #expect(store.storedString("jwt") == replacement)
+            #expect(store.storedString("userEmail") == Self.email)
+        }
+
+        // MARK: - stored token of another account
+
+        @Test func `refresh with a stored token of another account deletes it, keeps the email and throws sessionExpired without network`() async {
+            store.seed(SessionTestTokenFactory.aging(email: Self.otherEmail), key: "jwt")
+            store.seed(Self.email, key: "userEmail")
+
+            await expectAuthError(.sessionExpired) {
+                try await security.refresh()
+            }
+
+            #expect(SessionMockScenario.totalHits() == 0)
+            #expect(store.storedString("jwt") == nil)
+            #expect(store.storedString("userEmail") == Self.email)
+        }
+
+        @Test func `validToken with a fresh stored token of another account deletes it, keeps the email and throws sessionExpired without network`() async {
+            store.seed(SessionTestTokenFactory.fresh(email: Self.otherEmail), key: "jwt")
+            store.seed(Self.email, key: "userEmail")
+
+            await expectAuthError(.sessionExpired) {
+                try await security.validToken()
+            }
+
+            #expect(SessionMockScenario.totalHits() == 0)
+            #expect(store.storedString("jwt") == nil)
+            #expect(store.storedString("userEmail") == Self.email)
+        }
+
+        @Test func `validToken matches the stored email and the token claim without regard to case`() async throws {
+            let token = SessionTestTokenFactory.fresh()
+            store.seed(token, key: "jwt")
+            store.seed(Self.email.uppercased(), key: "userEmail")
+
+            let result = try await security.validToken()
+
+            #expect(result == token)
+            #expect(SessionMockScenario.totalHits() == 0)
+            #expect(store.storedString("jwt") == token)
+        }
+
+        @Test func `a login of another account that leaves its token beside the previous email is not resumed by refresh`() async throws {
+            let otherToken = SessionTestTokenFactory.fresh(email: Self.otherEmail)
+            store.seed(Self.email, key: "userEmail")
+            SessionMockScenario.respondWithToken(.jwtLogin, otherToken)
+            store.failNextWrite(with: Self.keychainFailure, key: "userEmail")
+            store.failNextDelete(with: Self.keychainFailure, key: "jwt")
+
+            await expectAuthError(.keychain(Self.keychainFailure)) {
+                try await security.login(email: Self.otherEmail, password: Self.password)
+            }
+            try #require(store.storedString("jwt") == otherToken)
+            try #require(store.storedString("userEmail") == Self.email)
+
+            await expectAuthError(.sessionExpired) {
+                try await security.refresh()
+            }
+
+            #expect(SessionMockScenario.hits(.jwtRefresh) == 0)
+            #expect(store.storedString("jwt") == nil)
+            #expect(store.storedString("userEmail") == Self.email)
         }
 
         // MARK: - me

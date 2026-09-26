@@ -90,7 +90,8 @@ extension SecurityData {
     }
 
     /// Exchanges the stored token for a new 24 h one. A stored token that is missing, expired,
-    /// unreadable or rejected with 401 ends the session; a network or server failure keeps it.
+    /// unreadable or rejected with 401 ends the session; a network or server failure keeps it. A
+    /// token removed or replaced while the renewal waited also ends it, and nothing is stored.
     func refresh() async throws(AuthError) {
         let current = try usableStoredToken().token
         let request = try makeRequest(url: .jwtRefresh, method: .post, token: current)
@@ -105,6 +106,11 @@ extension SecurityData {
             throw networkFailure(error)
         }
         _ = try validateJWT(response.token)
+        // While the renewal waited, the session may have ended or another one begun: the answer
+        // never brings back a token that is no longer the stored one.
+        guard try currentToken() == current else {
+            throw .sessionExpired
+        }
         try store.write(Data(response.token.utf8), key: tokenKey)
     }
 
@@ -164,17 +170,26 @@ extension SecurityData {
     }
 
     /// The stored token and its claims when it can still be used or renewed. Missing →
-    /// `sessionExpired`; expired or unreadable → deleted, then `sessionExpired`.
+    /// `sessionExpired`; expired, unreadable or issued to another account than the stored email →
+    /// deleted, then `sessionExpired`.
     private func usableStoredToken() throws(AuthError) -> (token: String, payload: JWTPayload) {
         guard let token = try currentToken() else {
             throw .sessionExpired
         }
+        let payload: JWTPayload
         do {
-            return (token, try validateJWT(token))
+            payload = try validateJWT(token)
         } catch {
             try clearToken()
             throw .sessionExpired
         }
+        // A sign-in whose Keychain writes failed halfway can leave its token next to the previous
+        // account's email: the token names its own account, and it never acts as another one.
+        if let email = try storedEmail(), email.lowercased() != payload.email.lowercased() {
+            try clearToken()
+            throw .sessionExpired
+        }
+        return (token, payload)
     }
 
     private func makeRequest(url: URL,

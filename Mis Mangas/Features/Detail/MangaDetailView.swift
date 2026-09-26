@@ -61,6 +61,7 @@ struct MangaDetailView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(.mmAccentFill)
                 .controlSize(.large)
                 MangaCollectionStatusView(manga: manga)
                 MangaStatisticsView(volumes: manga.volumes, chapters: manga.chapters)

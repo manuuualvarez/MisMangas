@@ -28,6 +28,7 @@ struct EmptyStateView: View {
                     refresh()
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(.mmAccentFill)
                 .controlSize(.large)
             }
         }

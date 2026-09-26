@@ -441,6 +441,62 @@ final class SessionViewModelTests {
         #expect(try CollectionTestSupport.entries(in: context).map(\.mangaID) == [1, 2])
     }
 
+    // MARK: - A session that expires while signing out
+
+    @Test(.timeLimit(.minutes(1)))
+    func `expire while a sign-out waits for the pass in flight to stop lets the sign-out finish: the queue is discarded and no expired-session message appears`() async throws {
+        let syncActor = syncActor
+        let security = security
+        // Its upload ignores the cancellation, so the stopped pass keeps the sign-out waiting
+        // inside the hand-over to the device-only service until the test answers it.
+        let stubborn = StubbornCollectionRepository(security: security)
+        let mangaRepository = DefaultMangaRepositoryTest()
+        let signedInService = MangaSyncService(
+            syncActor: syncActor,
+            mangaRepository: mangaRepository,
+            taxonomyCache: TaxonomyCacheActor(mangaRepository: mangaRepository),
+            collectionRepository: stubborn,
+            account: Self.email
+        )
+        let coordinator = SyncCoordinator(service: CollectionTestSupport.makeService(actor: syncActor, account: nil, security: security))
+        let session = SessionViewModel(
+            security: security,
+            syncCoordinator: coordinator,
+            syncActor: syncActor,
+            defaults: defaults,
+            makeSyncService: { account in
+                account == nil ? CollectionTestSupport.makeService(actor: syncActor, account: nil, security: security) : signedInService
+            }
+        )
+        await session.signIn(email: Self.email, password: Self.longEnough)
+        try #require(session.state == .authenticated(email: Self.email))
+        // What the root view does once a session is signed in.
+        await coordinator.replaceService(signedInService)
+        try await queueOperations([1, 2], account: Self.email)
+        try #require(try CollectionTestSupport.operations(in: PersistenceTestSupport.freshContext(container)).count == 2)
+
+        await coordinator.requestSync()
+        await stubborn.waitUntilHeld()
+        let signingOut = Task { await session.signOut() }
+        // The sign-out stopped the pass and waits for it to end.
+        await stubborn.waitUntilCancelled()
+        // The main actor runs this only once `expire()` below has reached its first suspension, so
+        // the stopped upload answers after the expiry arrived, never before.
+        let answering = Task { @MainActor in stubborn.release(throwing: .cancelled) }
+        await session.expire()
+        await answering.value
+        await signingOut.value
+
+        let context = PersistenceTestSupport.freshContext(container)
+        #expect(try CollectionTestSupport.operations(in: context).isEmpty)
+        #expect(session.state == .idle)
+        #expect(session.expiredMessage == nil)
+        #expect(!session.isSignOutFailurePresented)
+        #expect(security.calls(.clearToken) == 1)
+        #expect(security.snapshot.token == nil)
+        #expect(security.snapshot.email == Self.email)
+    }
+
     // MARK: - Account that owns each change
 
     @Test func `account is the signed-in address in lowercase, and nil before signing in, after the session expires and as a guest`() async throws {

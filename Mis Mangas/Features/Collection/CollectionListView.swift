@@ -47,6 +47,8 @@ struct CollectionListView: View {
             }
         }
         .listStyle(.plain)
+        // The selected row is a fill under white text: the fill accent, not the text one.
+        .tint(.mmAccentFill)
         // An alert, centered: a confirmation dialog from the list becomes a popover on iPad that
         // points at the list, over the detail of another manga, and one presented from the row
         // itself never appears after the swipe and leaves the list out of step with its rows.

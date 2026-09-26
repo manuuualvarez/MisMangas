@@ -19,6 +19,7 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             Tab("Catalog", systemImage: "books.vertical", value: .catalog) {
                 CatalogView(syncService: dependencies.syncService, pendingMode: $pendingCatalogMode)
+                    .tint(.accent)
             }
             Tab("My Collection", systemImage: "bookmark", value: .collection) {
                 MyCollectionView(
@@ -26,15 +27,22 @@ struct MainTabView: View {
                     selectedTab: $selectedTab,
                     pendingCatalogMode: $pendingCatalogMode
                 )
+                .tint(.accent)
             }
             Tab("Profile", systemImage: "person.crop.circle", value: .profile) {
                 ProfileView()
+                    .tint(.accent)
             }
             Tab(value: .search, role: .search) {
                 SearchView(syncService: dependencies.syncService)
+                    .tint(.accent)
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        // The selected tab is purple text on the tab bar but a purple fill under white text in
+        // the iPad sidebar, and in dark mode no single purple passes both: the tabs stay neutral
+        // and each tab's content gets the accent back.
+        .tint(.primary)
     }
 }
 

@@ -25,17 +25,25 @@ struct ProfileSyncStatusView: View {
                 if let lastSyncDate {
                     TimelineView(.periodic(from: .now, by: 60)) { _ in
                         Text(lastSyncDate, format: .relative(presentation: .named))
+                            .foregroundStyle(.mmSecondaryLabel)
                     }
                 } else {
                     Text("Not yet")
+                        .foregroundStyle(.mmSecondaryLabel)
                 }
             }
             LabeledContent("Pending changes") {
                 Text(pendingCount, format: .number)
+                    .foregroundStyle(.mmSecondaryLabel)
             }
             if blockedCount > 0 {
-                Label("^[\(blockedCount) change](inflect: true) couldn't be synced", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.mmWarning)
+                // The warning color marks the symbol; the text keeps the row's own hierarchy.
+                Label {
+                    Text("^[\(blockedCount) change](inflect: true) couldn't be synced")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.mmWarning)
+                }
                 Button("Retry blocked changes", action: retryBlocked)
                     .disabled(isSyncing)
             }

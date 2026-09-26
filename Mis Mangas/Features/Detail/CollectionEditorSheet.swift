@@ -101,6 +101,8 @@ struct CollectionEditorSheet: View {
                         Task { await save() }
                     }
                     .disabled(viewModel.isSaving)
+                    // The confirming button is filled: the fill accent keeps its symbol legible.
+                    .tint(.mmAccentFill)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()

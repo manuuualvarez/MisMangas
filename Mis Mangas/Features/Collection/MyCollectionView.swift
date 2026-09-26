@@ -61,6 +61,7 @@ struct MyCollectionView: View {
                             selectedTab = .catalog
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(.mmAccentFill)
                         .controlSize(.large)
                     }
                 } else if visibleMangas.isEmpty {
@@ -74,6 +75,7 @@ struct MyCollectionView: View {
                             filter = .all
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(.mmAccentFill)
                         .controlSize(.large)
                     }
                 } else {

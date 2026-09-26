@@ -21,6 +21,7 @@ struct ProfileGuestView: View {
                 Text("Sign In")
             }
             .buttonStyle(.borderedProminent)
+            .tint(.mmAccentFill)
             .controlSize(.large)
             NavigationLink(value: AuthRoute.signUp) {
                 Text("Create Account")

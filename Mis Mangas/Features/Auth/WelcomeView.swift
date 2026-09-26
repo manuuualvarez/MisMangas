@@ -19,11 +19,14 @@ struct WelcomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    Image(systemName: "books.vertical")
-                        .font(.largeTitle)
-                        .imageScale(.large)
-                        .foregroundStyle(.tint)
-                        .accessibilityHidden(true)
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        // Decorative: at accessibility sizes the room goes to the text.
+                        Image(systemName: "books.vertical")
+                            .font(.largeTitle)
+                            .imageScale(.large)
+                            .foregroundStyle(.tint)
+                            .accessibilityHidden(true)
+                    }
                     Text("Mis Mangas")
                         .font(.largeTitle.bold())
                         .accessibilityAddTraits(.isHeader)
@@ -45,7 +48,8 @@ struct WelcomeView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .defaultScrollAnchor(.center)
+            // Centers content that fits; content that does not starts at the top, title first.
+            .defaultScrollAnchor(.center, for: .alignment)
             .safeAreaInset(edge: .bottom) {
                 if !dynamicTypeSize.isAccessibilitySize {
                     WelcomeActionsView()
@@ -64,7 +68,10 @@ struct WelcomeView: View {
         }
         .task(id: session.expiredMessage) {
             if let message = session.expiredMessage {
-                AccessibilityNotification.Announcement(message).post()
+                // This screen has just replaced the tabs: a normal announcement would be cut short.
+                var announcement = AttributedString(message)
+                announcement.accessibilitySpeechAnnouncementPriority = .high
+                AccessibilityNotification.Announcement(announcement).post()
             }
         }
     }
