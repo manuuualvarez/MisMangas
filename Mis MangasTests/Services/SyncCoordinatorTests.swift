@@ -320,6 +320,54 @@ extension SharedMockSuites {
             #expect(leaving.phases.isEmpty)
         }
 
+        // MARK: - Buffering of a subscription
+
+        /// A coordinator whose passes are a guest's: they stay on the device and each one ends in
+        /// `passFinished`.
+        private func guestCoordinator() -> SyncCoordinator {
+            SyncCoordinator(service: CollectionTestSupport.makeService(actor: actor, account: nil, security: FakeSecurity()))
+        }
+
+        /// Everything `stream` holds right now. The reading task cancels itself before its first
+        /// read, so the stream ends as soon as it has handed over what it buffered and the read
+        /// never waits for an event that will not come.
+        private static func buffered(in stream: AsyncStream<SyncEvent>) async -> [SyncEvent] {
+            let reader = Task {
+                withUnsafeCurrentTask { $0?.cancel() }
+                var events: [SyncEvent] = []
+                for await event in stream {
+                    events.append(event)
+                }
+                return events
+            }
+            return await reader.value
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A subscription that keeps only the newest event holds a single passFinished after three passes nobody read`() async throws {
+            let coordinator = guestCoordinator()
+            let events = await coordinator.events(bufferingPolicy: .bufferingNewest(1))
+
+            // Each pass has published before `synchronize` returns.
+            for _ in 1...3 {
+                _ = try await coordinator.synchronize()
+            }
+
+            #expect(await Self.buffered(in: events) == [.passFinished])
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A subscription taken without a policy holds every passFinished of three passes nobody read`() async throws {
+            let coordinator = guestCoordinator()
+            let events = await coordinator.events()
+
+            for _ in 1...3 {
+                _ = try await coordinator.synchronize()
+            }
+
+            #expect(await Self.buffered(in: events) == [.passFinished, .passFinished, .passFinished])
+        }
+
         // MARK: - Refused changes
 
         @Test func `The changes the server refuses add up across passes until they are acknowledged`() async throws {
@@ -484,7 +532,7 @@ extension SharedMockSuites {
             #expect(try await coordinator.status().blockedCount == 0)
             #expect(try operations().isEmpty)
         }
-    
+
         @Test(.timeLimit(.minutes(1)))
         func `replaceService hands back a subscription that hears the passes of the new session`() async throws {
             try await CollectionTestSupport.storeMangas([1], in: actor, now: Self.t0)

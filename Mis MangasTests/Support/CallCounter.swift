@@ -7,7 +7,7 @@
 
 import Synchronization
 
-/// Counts calls of a `@Sendable` callback (for instance `onCollectionChanged`) from any thread.
+/// Counts calls of a `@Sendable` callback (for instance a widget reload) from any thread.
 final class CallCounter: Sendable {
     private let count = Mutex(0)
 
