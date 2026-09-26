@@ -12,13 +12,14 @@ import SwiftUI
 /// the account.
 struct ProfileView: View {
     @Environment(SessionViewModel.self) private var session
+    @Environment(AppDependencies.self) private var dependencies
     @State private var path: [AuthRoute] = []
 
     var body: some View {
         NavigationStack(path: $path) {
             Group {
                 if case let .authenticated(email) = session.state {
-                    ProfileAccountView(email: email)
+                    ProfileAccountView(email: email, dependencies: dependencies)
                 } else {
                     ProfileGuestView()
                 }

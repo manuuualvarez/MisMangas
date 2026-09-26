@@ -46,7 +46,8 @@ struct CollectionEditorDraftTests {
             mangaID: Self.monsterID,
             volumesOwned: Array(1 ... 10),
             readingVolume: 7,
-            completeCollection: false
+            completeCollection: false,
+            account: nil
         )
         let context = PersistenceTestSupport.freshContext(container)
         let stored = try #require(try PersistenceTestSupport.manga(id: Self.monsterID, in: context))

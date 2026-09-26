@@ -109,7 +109,8 @@ extension SharedMockSuites {
                 mangaID: Self.monsterID,
                 volumesOwned: [3, 1, 2, 2],
                 readingVolume: 2,
-                completeCollection: false
+                completeCollection: false,
+                account: nil
             )
 
             let context = PersistenceTestSupport.freshContext(container)
@@ -143,8 +144,8 @@ extension SharedMockSuites {
         @Test func `Saving the same manga twice keeps one entry and only the last queued upsert`() async throws {
             _ = try await actor.cacheDetail(monster)
 
-            try await service.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 2, completeCollection: false)
-            try await service.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [4, 1, 2, 3], readingVolume: 4, completeCollection: true)
+            try await service.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 2, completeCollection: false, account: nil)
+            try await service.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [4, 1, 2, 3], readingVolume: 4, completeCollection: true, account: nil)
 
             let context = PersistenceTestSupport.freshContext(container)
             let entries = try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context)
@@ -170,7 +171,7 @@ extension SharedMockSuites {
 
         @Test func `saveCollectionEntry for a manga that is not stored throws notFound and queues nothing`() async throws {
             do throws(PersistenceError) {
-                try await service.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false)
+                try await service.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil)
                 Issue.record("Expected PersistenceError.notFound, but the save completed")
             } catch {
                 switch error {
@@ -190,9 +191,9 @@ extension SharedMockSuites {
 
         @Test func `removeCollectionEntry drops the entry, keeps the manga and replaces the upsert with a delete`() async throws {
             _ = try await actor.cacheDetail(monster)
-            try await service.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 2, completeCollection: false)
+            try await service.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 2, completeCollection: false, account: nil)
 
-            try await service.removeCollectionEntry(mangaID: Self.monsterID)
+            try await service.removeCollectionEntry(mangaID: Self.monsterID, account: nil)
 
             let context = PersistenceTestSupport.freshContext(container)
             #expect(try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context).isEmpty)

@@ -7,35 +7,74 @@
 
 import SwiftUI
 
-/// How many collection changes still wait to reach the server, and how many it kept refusing.
-/// The blocked row only shows when there is one.
+/// The collection's sync status: when it last reached the server (kept current every minute), how
+/// many changes still wait to go up and how many it kept refusing, with a way to sync now and, when
+/// some are set aside, to retry them. The blocked row only shows when there is one; while a sync
+/// runs, its buttons wait.
 struct ProfileSyncStatusView: View {
     let pendingCount: Int
     let blockedCount: Int
+    let lastSyncDate: Date?
+    let isSyncing: Bool
+    let syncNow: () -> Void
+    let retryBlocked: () -> Void
 
     var body: some View {
         Section("Sync") {
+            LabeledContent("Last sync") {
+                if let lastSyncDate {
+                    TimelineView(.periodic(from: .now, by: 60)) { _ in
+                        Text(lastSyncDate, format: .relative(presentation: .named))
+                    }
+                } else {
+                    Text("Not yet")
+                }
+            }
             LabeledContent("Pending changes") {
                 Text(pendingCount, format: .number)
             }
             if blockedCount > 0 {
-                LabeledContent("Couldn't be synced") {
-                    Text(blockedCount, format: .number)
-                        .foregroundStyle(.mmWarning)
+                Label("^[\(blockedCount) change](inflect: true) couldn't be synced", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.mmWarning)
+                Button("Retry blocked changes", action: retryBlocked)
+                    .disabled(isSyncing)
+            }
+            Button(action: syncNow) {
+                LabeledContent("Sync now") {
+                    if isSyncing {
+                        // The button's value already says "Syncing".
+                        ProgressView()
+                            .accessibilityHidden(true)
+                    }
                 }
             }
+            .disabled(isSyncing)
+            .accessibilityValue(isSyncing ? Text("Syncing") : Text(verbatim: ""))
         }
     }
 }
 
-#Preview("Nothing unsent", traits: .sampleData) {
+#Preview("Never synced", traits: .sampleData) {
     Form {
-        ProfileSyncStatusView(pendingCount: 0, blockedCount: 0)
+        ProfileSyncStatusView(pendingCount: 0, blockedCount: 0, lastSyncDate: nil, isSyncing: false, syncNow: {}, retryBlocked: {})
     }
 }
 
 #Preview("Pending and blocked", traits: .sampleData) {
     Form {
-        ProfileSyncStatusView(pendingCount: 3, blockedCount: 1)
+        ProfileSyncStatusView(
+            pendingCount: 3,
+            blockedCount: 1,
+            lastSyncDate: .now.addingTimeInterval(-3600),
+            isSyncing: false,
+            syncNow: {},
+            retryBlocked: {}
+        )
+    }
+}
+
+#Preview("Syncing", traits: .sampleData) {
+    Form {
+        ProfileSyncStatusView(pendingCount: 2, blockedCount: 0, lastSyncDate: .now, isSyncing: true, syncNow: {}, retryBlocked: {})
     }
 }

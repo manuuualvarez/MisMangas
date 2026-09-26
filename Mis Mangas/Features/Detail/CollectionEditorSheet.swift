@@ -11,7 +11,8 @@ import SwiftUI
 /// The collection form of a manga, presented as a sheet with its own navigation bar: the volumes
 /// owned, the reading volume (a stepper within the published count, a free number field while
 /// the count is unknown), the complete switch and, for a manga already in the collection, its
-/// removal after confirmation. Edits live on a draft until "Save" writes them to the store.
+/// removal after confirmation. Edits live on a draft until "Save" writes them to the store. Without
+/// a session, a footer says the changes stay on the device until the user signs in.
 struct CollectionEditorSheet: View {
     let manga: Manga
     @State private var viewModel: CollectionViewModel
@@ -21,9 +22,9 @@ struct CollectionEditorSheet: View {
     @FocusState private var isEditingNumber: Bool
     @Environment(\.dismiss) private var dismiss
 
-    init(manga: Manga, syncService: MangaSyncService) {
+    init(manga: Manga, dependencies: AppDependencies) {
         self.manga = manga
-        _viewModel = State(initialValue: CollectionViewModel(syncService: syncService))
+        _viewModel = State(initialValue: dependencies.makeCollectionViewModel(presentsRejections: false))
         _draft = State(initialValue: CollectionEditorDraft(from: manga))
     }
 
@@ -62,6 +63,12 @@ struct CollectionEditorSheet: View {
                 Section {
                     Toggle("Complete collection", isOn: $draft.completeCollection)
                         .accessibilityHint((draft.volumesCount ?? 0) > 0 ? Text("Marks every volume as owned") : Text(verbatim: ""))
+                } footer: {
+                    // Without an account nothing leaves the device; say it before saving, since the
+                    // sheet closes once the change is saved.
+                    if !viewModel.isSyncAvailable {
+                        Text("Changes are saved on this device. Sign in to sync.")
+                    }
                 }
                 if let error = viewModel.error {
                     Section {
@@ -145,7 +152,7 @@ struct CollectionEditorSheet: View {
     @Previewable @Query var mangas: [Manga]
     @Previewable @Environment(AppDependencies.self) var dependencies
     if let manga = mangas.first(where: { $0.id == 796 }) {
-        CollectionEditorSheet(manga: manga, syncService: dependencies.syncService)
+        CollectionEditorSheet(manga: manga, dependencies: dependencies)
     }
 }
 
@@ -154,7 +161,7 @@ struct CollectionEditorSheet: View {
     @Previewable @Query var mangas: [Manga]
     @Previewable @Environment(AppDependencies.self) var dependencies
     if let manga = mangas.first(where: { $0.id == 42 }) {
-        CollectionEditorSheet(manga: manga, syncService: dependencies.syncService)
+        CollectionEditorSheet(manga: manga, dependencies: dependencies)
     }
 }
 
@@ -163,6 +170,6 @@ struct CollectionEditorSheet: View {
     @Previewable @Query var mangas: [Manga]
     @Previewable @Environment(AppDependencies.self) var dependencies
     if let manga = mangas.first(where: { $0.id == 16765 }) {
-        CollectionEditorSheet(manga: manga, syncService: dependencies.syncService)
+        CollectionEditorSheet(manga: manga, dependencies: dependencies)
     }
 }

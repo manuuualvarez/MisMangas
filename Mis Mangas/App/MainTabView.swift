@@ -22,7 +22,7 @@ struct MainTabView: View {
             }
             Tab("My Collection", systemImage: "bookmark", value: .collection) {
                 MyCollectionView(
-                    syncService: dependencies.syncService,
+                    dependencies: dependencies,
                     selectedTab: $selectedTab,
                     pendingCatalogMode: $pendingCatalogMode
                 )

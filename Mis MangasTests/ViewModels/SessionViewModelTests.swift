@@ -66,13 +66,8 @@ final class SessionViewModelTests {
             syncCoordinator: SyncCoordinator(service: guestService),
             syncActor: actor,
             defaults: defaults,
-            makeSyncService: { authenticated in
-                MangaSyncService(
-                    syncActor: actor,
-                    mangaRepository: repository,
-                    taxonomyCache: taxonomyCache,
-                    collectionRepository: authenticated ? DefaultCollectionRepositoryTest(security: security) : nil
-                )
+            makeSyncService: { account in
+                CollectionTestSupport.makeService(actor: actor, account: account, security: security)
             }
         )
     }
@@ -99,12 +94,13 @@ final class SessionViewModelTests {
         }
     }
 
-    /// Saves a collection entry for each id through the real actor, which queues one upload per
-    /// entry, then blocks the operation of `blockedID` by failing it as the drain does.
-    private func queueOperations(_ ids: [Int], blocking blockedID: Int? = nil) async throws {
+    /// Saves a collection entry for each id through the real actor under `account` (`nil`: a guest),
+    /// which queues one upload per entry, then blocks the operation of `blockedID` by failing it as
+    /// the drain does.
+    private func queueOperations(_ ids: [Int], account: String? = nil, blocking blockedID: Int? = nil) async throws {
         try await CollectionTestSupport.storeMangas(ids, in: syncActor, now: Self.t0)
         for id in ids {
-            try await syncActor.saveCollectionEntry(mangaID: id, volumesOwned: [id], readingVolume: nil, completeCollection: false, now: Self.t1)
+            try await syncActor.saveCollectionEntry(mangaID: id, volumesOwned: [id], readingVolume: nil, completeCollection: false, account: account, now: Self.t1)
         }
         if let blockedID {
             try await CollectionTestSupport.block(mangaID: blockedID, in: syncActor, container: container, now: Self.t2)
@@ -294,21 +290,24 @@ final class SessionViewModelTests {
         #expect(security.calls(.login) == 0)
     }
 
-    @Test func `signOut after signing in logs out and returns to idle`() async throws {
+    @Test func `signOut after signing in forgets the token, keeps the address as the device's last account and returns to idle`() async throws {
         await viewModel.signIn(email: Self.email, password: Self.longEnough)
         try #require(viewModel.state == .authenticated(email: Self.email))
 
         await viewModel.signOut()
 
-        #expect(security.calls(.logout) == 1)
+        #expect(security.calls(.clearToken) == 1)
+        #expect(security.calls(.logout) == 0)
+        #expect(security.snapshot.token == nil)
+        #expect(security.snapshot.email == Self.email)
         #expect(viewModel.state == .idle)
         #expect(!viewModel.isAuthenticated)
     }
 
-    @Test func `signOut whose credentials cannot be removed keeps the session open and reports it`() async throws {
+    @Test func `signOut whose token cannot be removed keeps the session open and reports it`() async throws {
         await viewModel.signIn(email: Self.email, password: Self.longEnough)
         try #require(viewModel.state == .authenticated(email: Self.email))
-        security.configure { $0.logoutError = .keychain(Self.keychainFailure) }
+        security.configure { $0.clearTokenError = .keychain(Self.keychainFailure) }
 
         await viewModel.signOut()
 
@@ -416,28 +415,68 @@ final class SessionViewModelTests {
 
     // MARK: - Unsent changes
 
-    @Test func `refreshPendingChanges counts the queued operations apart from the blocked ones, and both as unsent`() async throws {
-        try await queueOperations([1, 2], blocking: 2)
+    @Test func `unsentChangesCount counts the pending and blocked changes of the signed-in account and the guest's, never another account's`() async throws {
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+        try #require(viewModel.state == .authenticated(email: Self.email))
+        try await queueOperations([1, 2], account: Self.email, blocking: 2)
+        try await queueOperations([3], account: nil)
+        try await queueOperations([4], account: Self.earlierEmail)
 
         await viewModel.refreshPendingChanges()
 
-        #expect(viewModel.pendingCount == 1)
-        #expect(viewModel.blockedCount == 1)
-        #expect(viewModel.unsentChangesCount == 2)
+        #expect(viewModel.unsentChangesCount == 3)
     }
 
-    @Test func `signOut discards every unsent change, blocked ones included, logs out and keeps the local collection`() async throws {
+    @Test func `signOut discards every unsent change, blocked ones included, forgets the token and keeps the local collection`() async throws {
         await viewModel.signIn(email: Self.email, password: Self.longEnough)
         try #require(viewModel.state == .authenticated(email: Self.email))
         try await queueOperations([1, 2], blocking: 2)
 
         await viewModel.signOut()
 
-        #expect(security.calls(.logout) == 1)
+        #expect(security.calls(.clearToken) == 1)
         #expect(viewModel.state == .idle)
         let context = PersistenceTestSupport.freshContext(container)
         #expect(try CollectionTestSupport.operations(in: context).isEmpty)
         #expect(try CollectionTestSupport.entries(in: context).map(\.mangaID) == [1, 2])
+    }
+
+    // MARK: - Account that owns each change
+
+    @Test func `account is the signed-in address in lowercase, and nil before signing in, after the session expires and as a guest`() async throws {
+        #expect(viewModel.account == nil)
+
+        await viewModel.signIn(email: "Test@Example.COM", password: Self.longEnough)
+        try #require(viewModel.isAuthenticated)
+
+        #expect(viewModel.account == "test@example.com")
+
+        await viewModel.expire()
+        #expect(viewModel.account == nil)
+
+        viewModel.continueAsGuest()
+        #expect(viewModel.account == nil)
+    }
+
+    @Test func `account of a session resumed at launch is its stored address`() async {
+        storeEarlierSession()
+
+        await viewModel.restoreSession()
+
+        #expect(viewModel.account == Self.earlierEmail)
+    }
+
+    @Test func `signIn on a device without a last account leaves another account's queue as it was, owned by that account`() async throws {
+        try await queueOperations([1, 2], account: Self.earlierEmail)
+        security.configure { $0.email = nil }
+
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+        try #require(viewModel.state == .authenticated(email: Self.email))
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let operations = try CollectionTestSupport.operationsByManga(in: context)
+        #expect(operations.map(\.mangaID) == [1, 2])
+        #expect(operations.map(\.account) == [Self.earlierEmail, Self.earlierEmail])
     }
 
     // MARK: - A guest who signs in
@@ -652,5 +691,55 @@ final class SessionViewModelTests {
         #expect(security.calls(.currentToken) == reads)
         #expect(security.calls(.login) == 1)
         #expect(viewModel.state == .authenticated(email: Self.email))
+    }
+
+    // MARK: - The collection of the device's last account
+
+    /// Stores the collection a signed-out account left: manga 3 synced (no queued change), manga 1
+    /// with a change of that account still queued, and manga 2 saved afterwards as a guest.
+    private func storeCollectionLeftBy(_ account: String) async throws {
+        try await CollectionTestSupport.storeMangas([1, 2, 3], in: syncActor, now: Self.t0)
+        try await syncActor.saveCollectionEntry(mangaID: 3, volumesOwned: [3], readingVolume: nil, completeCollection: false, account: account, now: Self.t1)
+        try await syncActor.clearOutbox()
+        try await syncActor.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: account, now: Self.t1)
+        try await syncActor.saveCollectionEntry(mangaID: 2, volumesOwned: [2], readingVolume: nil, completeCollection: false, account: nil, now: Self.t2)
+        security.configure { $0.email = account }
+    }
+
+    @Test func `signIn as an account other than the device's last one forgets that account's collection at once and keeps the guest's changes`() async throws {
+        try await storeCollectionLeftBy(Self.earlierEmail)
+
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+        try #require(viewModel.state == .authenticated(email: Self.email))
+
+        let context = PersistenceTestSupport.freshContext(container)
+        #expect(try CollectionTestSupport.entries(in: context).map(\.mangaID) == [2])
+        let operations = try CollectionTestSupport.operationsByManga(in: context)
+        #expect(operations.map(\.mangaID) == [2])
+        #expect(operations.map(\.account) == [nil])
+        let mangas = try context.fetch(FetchDescriptor<Manga>(sortBy: [SortDescriptor(\.id)]))
+        #expect(mangas.map(\.inCollection) == [false, true, false])
+    }
+
+    @Test func `signIn as the device's last account, whatever the case of the address, keeps its collection`() async throws {
+        try await storeCollectionLeftBy(Self.email)
+
+        await viewModel.signIn(email: Self.email.uppercased(), password: Self.longEnough)
+        try #require(viewModel.isAuthenticated)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        #expect(try CollectionTestSupport.entries(in: context).map(\.mangaID) == [1, 2, 3])
+        #expect(try CollectionTestSupport.operationsByManga(in: context).map(\.mangaID) == [1, 2])
+    }
+
+    @Test func `signIn on a device without a last account keeps the local collection`() async throws {
+        try await storeCollectionLeftBy(Self.earlierEmail)
+        security.configure { $0.email = nil }
+
+        await viewModel.signIn(email: Self.email, password: Self.longEnough)
+        try #require(viewModel.isAuthenticated)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        #expect(try CollectionTestSupport.entries(in: context).map(\.mangaID) == [1, 2, 3])
     }
 }

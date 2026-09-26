@@ -48,10 +48,6 @@ final class SessionViewModel {
     private(set) var state: State = .restoring
     /// Shown on the welcome screen after the session ended on its own.
     private(set) var expiredMessage: String?
-    /// Changes saved on the device that still wait to reach the server.
-    private(set) var pendingCount = 0
-    /// Changes the server kept failing, set aside until retried.
-    private(set) var blockedCount = 0
     /// The last sign-out did not happen: the unsent changes or the stored session could not be
     /// removed. The alert that says so clears it.
     var isSignOutFailurePresented = false
@@ -59,10 +55,9 @@ final class SessionViewModel {
     /// from there keeps the app on screen while it waits and if it fails.
     private(set) var isGuestModeChosen = false
 
-    /// Everything a sign-out discards: the pending changes and the blocked ones.
-    var unsentChangesCount: Int {
-        pendingCount + blockedCount
-    }
+    /// Everything a sign-out discards: the pending changes of the account and the blocked ones,
+    /// as `refreshPendingChanges()` last read them.
+    private(set) var unsentChangesCount = 0
 
     /// Whether the welcome screen takes the place of the app: signed out, or signing in without
     /// having chosen guest mode.
@@ -75,6 +70,15 @@ final class SessionViewModel {
         case .authenticating, .failed:
             !isGuestModeChosen
         }
+    }
+
+    /// The account of the signed-in session, lowercased; `nil` without one. The queued changes
+    /// carry it, so no other account ever sends them.
+    var account: String? {
+        guard case .authenticated(let email) = state else {
+            return nil
+        }
+        return email.lowercased()
     }
 
     var isAuthenticated: Bool {
@@ -130,7 +134,7 @@ final class SessionViewModel {
     private let syncActor: MangaSyncActor
     private let defaults: UserDefaults
     /// Builds the sync service of a session, signed in or not, for the coordinator.
-    private let makeSyncService: @MainActor (Bool) -> MangaSyncService
+    private let makeSyncService: @MainActor (String?) -> MangaSyncService
     private var currentTask: Task<Void, Never>?
 
     init(
@@ -138,7 +142,7 @@ final class SessionViewModel {
         syncCoordinator: SyncCoordinator,
         syncActor: MangaSyncActor,
         defaults: UserDefaults,
-        makeSyncService: @escaping @MainActor (Bool) -> MangaSyncService
+        makeSyncService: @escaping @MainActor (String?) -> MangaSyncService
     ) {
         self.security = security
         self.syncCoordinator = syncCoordinator
@@ -187,20 +191,19 @@ final class SessionViewModel {
         }
     }
 
-    /// Ends a session the server no longer accepts. The email stays stored, so the next sign-in
-    /// can tell whether the account changed.
+    /// Ends a session the server no longer accepts. The email stays stored for the next launch,
+    /// and the queued changes keep their account: only that account sends them if it returns.
     func expire() async {
         await replaceCurrentTask { [weak self] in
             await self?.markExpired()
         }
     }
 
-    /// Reads how many changes are still waiting to be sent, for the profile and the sign-out
-    /// warning. If the store cannot be read, the last counts stay.
+    /// Reads how many changes a sign-out would discard, for its warning. If the store cannot be
+    /// read, the last count stays.
     func refreshPendingChanges() async {
-        guard let counts = try? await syncActor.pendingOperationCounts() else { return }
-        pendingCount = counts.pending
-        blockedCount = counts.blocked
+        guard let counts = try? await syncActor.pendingOperationCounts(for: account) else { return }
+        unsentChangesCount = counts.pending + counts.blocked
     }
 
     /// Forgets the error of a failed attempt, so the next form opens clean. A guest stays a guest.
@@ -227,6 +230,10 @@ final class SessionViewModel {
             return
         }
         state = .authenticating
+        // The account whose collection the device holds, read before the sign-in stores the new one.
+        // If the Keychain cannot tell, the first pass still drops that account's queue and its
+        // snapshot replaces the collection.
+        let lastAccount = try? await security.storedEmail()
         do {
             if createsAccount {
                 try await security.register(email: email, password: password)
@@ -245,6 +252,17 @@ final class SessionViewModel {
             try? await security.logout()
             return
         }
+        let newAccount = email.lowercased()
+        if let lastAccount, lastAccount.lowercased() != newAccount {
+            // Another account's collection is never shown to this one. If the store cannot be
+            // written now, the first pass's snapshot replaces that collection anyway.
+            try? await syncActor.handOverCollection(to: newAccount)
+            guard !Task.isCancelled else {
+                // Abandoned during the hand-over: no token is left behind, as above.
+                try? await security.logout()
+                return
+            }
+        }
         defaults.removeObject(forKey: Self.guestKey)
         isGuestModeChosen = false
         expiredMessage = nil
@@ -252,32 +270,32 @@ final class SessionViewModel {
     }
 
     /// The sync coordinator moves to the device-only service first: the pass in flight stops, and
-    /// any pass asked for from now on sends nothing. The unsent changes go next, so another
-    /// account never sends them; if they cannot be discarded, the session stays open with its
-    /// service back.
+    /// any pass asked for from now on sends nothing. The unsent changes go next, as the sign-out
+    /// warning said; if they cannot be discarded, the session stays open with its service back.
     private func logout() async {
-        await syncCoordinator.replaceService(makeSyncService(false))
+        await syncCoordinator.replaceService(makeSyncService(nil))
         guard !Task.isCancelled else { return }
         do {
             try await syncActor.clearOutbox()
         } catch {
             // The operation that cancelled this one decides the coordinator's service.
             guard !Task.isCancelled else { return }
-            await syncCoordinator.replaceService(makeSyncService(true))
+            await syncCoordinator.replaceService(makeSyncService(account))
             isSignOutFailurePresented = true
             return
         }
         guard !Task.isCancelled else { return }
         isSignOutFailurePresented = false
-        pendingCount = 0
-        blockedCount = 0
+        unsentChangesCount = 0
         do {
-            try await security.logout()
+            // The address stays as the device's last account: the next sign-in of another account
+            // hands the collection over to it.
+            try await security.clearToken()
         } catch {
             // The Keychain still holds the session, and the next launch would resume it: the
             // session stays open, with its service back, and the profile says so.
             guard !Task.isCancelled else { return }
-            await syncCoordinator.replaceService(makeSyncService(true))
+            await syncCoordinator.replaceService(makeSyncService(account))
             isSignOutFailurePresented = true
             return
         }

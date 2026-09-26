@@ -15,7 +15,9 @@ import Testing
 /// network. The ViewModel never exposes the entry, so the oracle for "what was saved" is a fresh
 /// `ModelContext` over the same container, exactly as the detail and the collection tab read
 /// it; the other oracles are the fields each test chose to save and `manga_monster.json`.
-/// Seeding goes straight through the actor, so a failure here points at the ViewModel.
+/// Seeding goes straight through the actor, so a failure here points at the ViewModel. The session
+/// is a guest one and the coordinator runs the device-only service, so the pass each write asks
+/// for never leaves the device.
 @Suite("CollectionViewModel")
 @MainActor
 struct CollectionViewModelTests {
@@ -33,13 +35,21 @@ struct CollectionViewModelTests {
         let made = try PersistenceTestSupport.makeActor()
         actor = made.actor
         container = made.container
-        let repository = DefaultMangaRepositoryTest()
-        let service = MangaSyncService(
-            syncActor: actor,
-            mangaRepository: repository,
-            taxonomyCache: TaxonomyCacheActor(mangaRepository: repository)
+        let security = FakeSecurity()
+        let service = CollectionTestSupport.makeService(actor: made.actor, account: nil, security: security)
+        let coordinator = SyncCoordinator(service: service)
+        // Nothing here signs in or out, so the session never writes to these defaults.
+        let defaults = try #require(UserDefaults(suiteName: "CollectionViewModelTests.\(UUID().uuidString)"))
+        let session = SessionViewModel(
+            security: security,
+            syncCoordinator: coordinator,
+            syncActor: made.actor,
+            defaults: defaults,
+            makeSyncService: { [actor = made.actor] account in
+                CollectionTestSupport.makeService(actor: actor, account: account, security: security)
+            }
         )
-        viewModel = CollectionViewModel(syncService: service)
+        viewModel = CollectionViewModel(syncService: service, syncCoordinator: coordinator, session: session)
         monster = try JSONDecoder.app.decode(MangaDTO.self, from: TestFixtures.data("manga_monster.json"))
     }
 

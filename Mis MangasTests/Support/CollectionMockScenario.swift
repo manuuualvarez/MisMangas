@@ -43,6 +43,21 @@ enum CollectionMockScenario {
         .json(#"{"error":true,"reason":"\#(reason)"}"#, status: status)
     }
 
+    // MARK: - Ordering
+
+    /// Waits until a request of `key` is held, for passes nobody awaits (started by `requestSync`).
+    /// Nothing in the test can end this wait when the code under test never sends the request, so
+    /// the test carries a time limit; cancelling the test resets the mock, which ends the wait and
+    /// makes this return `false`.
+    static func waitUntilHeldOrCancelled(_ key: Key) async -> Bool {
+        await withTaskCancellationHandler {
+            await CatalogMockScenario.waitUntilHeld(key)
+        } onCancel: {
+            reset()
+        }
+        return CatalogMockScenario.isHeld(key)
+    }
+
     // MARK: - Oracle
 
     static func hits(_ key: Key) -> Int {

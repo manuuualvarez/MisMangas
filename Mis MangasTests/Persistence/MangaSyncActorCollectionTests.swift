@@ -115,7 +115,7 @@ struct MangaSyncActorCollectionTests {
     @Test func `cacheDetail of a manga in the collection keeps it in the collection and leaves its queued upsert alone`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 2, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 2, completeCollection: false, account: nil, now: Self.t1)
 
         _ = try await actor.cacheDetail(monster.replacing(score: 7.5), now: Self.t2)
 
@@ -136,7 +136,7 @@ struct MangaSyncActorCollectionTests {
         let (actor, container) = try PersistenceTestSupport.makeActor()
 
         do throws(PersistenceError) {
-            try await actor.saveCollectionEntry(mangaID: 42, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
+            try await actor.saveCollectionEntry(mangaID: 42, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
             Issue.record("Expected PersistenceError.notFound, but the save completed")
         } catch {
             switch error {
@@ -162,6 +162,7 @@ struct MangaSyncActorCollectionTests {
             volumesOwned: Array(1 ... 10),
             readingVolume: 7,
             completeCollection: false,
+            account: nil,
             now: Self.t2
         )
 
@@ -201,7 +202,7 @@ struct MangaSyncActorCollectionTests {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
 
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [3, 1, 2, 2], readingVolume: 2, completeCollection: false, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [3, 1, 2, 2], readingVolume: 2, completeCollection: false, account: nil, now: Self.t2)
 
         let context = PersistenceTestSupport.freshContext(container)
         let entries = try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context)
@@ -236,6 +237,7 @@ struct MangaSyncActorCollectionTests {
             volumesOwned: [-1, 0, 1, 2, 300, 301, Int.max],
             readingVolume: Int.max,
             completeCollection: false,
+            account: nil,
             now: Self.t2
         )
 
@@ -256,7 +258,7 @@ struct MangaSyncActorCollectionTests {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
 
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: -5, completeCollection: false, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: -5, completeCollection: false, account: nil, now: Self.t2)
 
         let context = PersistenceTestSupport.freshContext(container)
         let entry = try #require(try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context).first)
@@ -285,9 +287,9 @@ struct MangaSyncActorCollectionTests {
     @Test func `Saving the same manga again updates its only entry, keeps the creation date and replaces the queued upsert`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: Array(1 ... 10), readingVolume: 7, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: Array(1 ... 10), readingVolume: 7, completeCollection: false, account: nil, now: Self.t1)
 
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: Array(1 ... 18), readingVolume: nil, completeCollection: true, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: Array(1 ... 18), readingVolume: nil, completeCollection: true, account: nil, now: Self.t2)
 
         let context = PersistenceTestSupport.freshContext(container)
         let entries = try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context)
@@ -320,7 +322,7 @@ struct MangaSyncActorCollectionTests {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for volume in 1 ... 100 {
                 group.addTask {
-                    try await actor.saveCollectionEntry(mangaID: mangaID, volumesOwned: [volume], readingVolume: nil, completeCollection: false, now: Self.t1)
+                    try await actor.saveCollectionEntry(mangaID: mangaID, volumesOwned: [volume], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
                 }
             }
             try await group.waitForAll()
@@ -344,9 +346,9 @@ struct MangaSyncActorCollectionTests {
     @Test func `Removing a saved entry takes the manga out of the collection, keeps the manga and replaces the upsert with a delete`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 1, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 1, completeCollection: false, account: nil, now: Self.t1)
 
-        try await actor.removeCollectionEntry(mangaID: Self.monsterID, now: Self.t2)
+        try await actor.removeCollectionEntry(mangaID: Self.monsterID, account: nil, now: Self.t2)
 
         let context = PersistenceTestSupport.freshContext(container)
         let operations = try PersistenceTestSupport.fetchAll(PendingOperation.self, in: context)
@@ -367,7 +369,7 @@ struct MangaSyncActorCollectionTests {
     @Test func `Removing a manga that has no local entry still queues its delete and creates nothing`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
 
-        try await actor.removeCollectionEntry(mangaID: 42, now: Self.t1)
+        try await actor.removeCollectionEntry(mangaID: 42, account: nil, now: Self.t1)
 
         let context = PersistenceTestSupport.freshContext(container)
         let operations = try PersistenceTestSupport.fetchAll(PendingOperation.self, in: context)
@@ -389,10 +391,10 @@ struct MangaSyncActorCollectionTests {
         try await withThrowingTaskGroup(of: Void.self) { group in
             for pass in 1 ... 50 {
                 group.addTask {
-                    try await actor.saveCollectionEntry(mangaID: mangaID, volumesOwned: [pass], readingVolume: pass, completeCollection: false, now: Self.t1)
+                    try await actor.saveCollectionEntry(mangaID: mangaID, volumesOwned: [pass], readingVolume: pass, completeCollection: false, account: nil, now: Self.t1)
                 }
                 group.addTask {
-                    try await actor.removeCollectionEntry(mangaID: mangaID, now: Self.t1)
+                    try await actor.removeCollectionEntry(mangaID: mangaID, account: nil, now: Self.t1)
                 }
             }
             try await group.waitForAll()
@@ -524,7 +526,7 @@ struct MangaSyncActorCollectionTests {
     @Test func `Upserting from a server DTO over an existing entry keeps its local id and creation date`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 1, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: 1, completeCollection: false, account: nil, now: Self.t1)
         let localID = try Self.entryID(mangaID: Self.monsterID, in: container)
         let dto = try #require(try Self.serverEntries().first)
 
@@ -547,7 +549,7 @@ struct MangaSyncActorCollectionTests {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
         // The same user fields the fixture carries for Monster.
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: Array(1 ... 18), readingVolume: 12, completeCollection: true, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: Array(1 ... 18), readingVolume: 12, completeCollection: true, account: nil, now: Self.t1)
         let dto = try #require(try Self.serverEntries().first)
 
         try await actor.upsertCollectionEntry(from: dto, now: Self.t2)
@@ -566,8 +568,8 @@ struct MangaSyncActorCollectionTests {
         let (actor, _) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
         _ = try await actor.cacheDetail(berserk, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2, 3], readingVolume: 2, completeCollection: false, now: Self.t2)
-        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [5, 4], readingVolume: nil, completeCollection: true, now: Self.t3)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2, 3], readingVolume: 2, completeCollection: false, account: nil, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [5, 4], readingVolume: nil, completeCollection: true, account: nil, now: Self.t3)
 
         let snapshot = try await actor.collectionSnapshot()
 
@@ -601,9 +603,9 @@ struct MangaSyncActorCollectionTests {
         _ = try await actor.cacheDetail(monster, now: Self.t1)
         _ = try await actor.cacheDetail(berserk, now: Self.t1)
 
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [2], readingVolume: 2, completeCollection: true, now: Self.t1)
-        try await actor.removeCollectionEntry(mangaID: Self.monsterID, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [2], readingVolume: 2, completeCollection: true, account: nil, now: Self.t1)
+        try await actor.removeCollectionEntry(mangaID: Self.monsterID, account: nil, now: Self.t2)
 
         let context = PersistenceTestSupport.freshContext(container)
         let operations = try PersistenceTestSupport.fetchAll(PendingOperation.self, in: context, sortBy: [SortDescriptor(\.mangaID)])
@@ -629,11 +631,11 @@ struct MangaSyncActorCollectionTests {
         _ = try await actor.cacheDetail(berserk, now: Self.t1)
         _ = try await actor.cacheDetail(monster.replacing(id: 3), now: Self.t1)
         // Queued out of chronological order, so insertion order cannot pass for FIFO.
-        try await actor.saveCollectionEntry(mangaID: 3, volumesOwned: [3], readingVolume: nil, completeCollection: false, now: Self.t3)
-        try await actor.removeCollectionEntry(mangaID: Self.monsterID, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [2], readingVolume: nil, completeCollection: false, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: 3, volumesOwned: [3], readingVolume: nil, completeCollection: false, account: nil, now: Self.t3)
+        try await actor.removeCollectionEntry(mangaID: Self.monsterID, account: nil, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [2], readingVolume: nil, completeCollection: false, account: nil, now: Self.t2)
 
-        let drained = try await actor.drainPendingOperations()
+        let drained = try await actor.drainPendingOperations(for: CollectionTestSupport.account)
 
         #expect(drained.map(\.mangaID) == [Self.monsterID, Self.berserkID, 3])
         #expect(drained.map(\.type) == [.delete, .upsert, .upsert])
@@ -650,15 +652,15 @@ struct MangaSyncActorCollectionTests {
     @Test func `The third failure blocks an operation and takes it out of the drain`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.removeCollectionEntry(mangaID: Self.berserkID, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.removeCollectionEntry(mangaID: Self.berserkID, account: nil, now: Self.t2)
         let failingID = try Self.operationID(mangaID: Self.monsterID, in: container)
 
         let first = try await actor.markOperationFailed(id: failingID, error: "first", now: Self.t1)
         let second = try await actor.markOperationFailed(id: failingID, error: "second", now: Self.t2)
-        let drainedBeforeBlocking = try await actor.drainPendingOperations()
+        let drainedBeforeBlocking = try await actor.drainPendingOperations(for: CollectionTestSupport.account)
         let third = try await actor.markOperationFailed(id: failingID, error: "third", now: Self.t3)
-        let drainedAfterBlocking = try await actor.drainPendingOperations()
+        let drainedAfterBlocking = try await actor.drainPendingOperations(for: CollectionTestSupport.account)
 
         #expect([first, second, third] == [false, false, true])
         #expect(drainedBeforeBlocking.map(\.mangaID) == [Self.monsterID, Self.berserkID])
@@ -677,7 +679,7 @@ struct MangaSyncActorCollectionTests {
     @Test func `unblockAll returns a blocked operation to the drain with its attempts and last error reset`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
         let blockedID = try Self.operationID(mangaID: Self.monsterID, in: container)
         for _ in 1 ... 3 {
             _ = try await actor.markOperationFailed(id: blockedID, error: "offline", now: Self.t2)
@@ -685,7 +687,7 @@ struct MangaSyncActorCollectionTests {
 
         try await actor.unblockAll()
 
-        let drained = try await actor.drainPendingOperations()
+        let drained = try await actor.drainPendingOperations(for: CollectionTestSupport.account)
         #expect(drained.map(\.id) == [blockedID])
         #expect(drained.map(\.attempts) == [0])
         let context = PersistenceTestSupport.freshContext(container)
@@ -698,8 +700,8 @@ struct MangaSyncActorCollectionTests {
     @Test func `Completing an operation deletes only that operation`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.removeCollectionEntry(mangaID: Self.berserkID, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.removeCollectionEntry(mangaID: Self.berserkID, account: nil, now: Self.t2)
         let completedID = try Self.operationID(mangaID: Self.monsterID, in: container)
 
         try await actor.markOperationCompleted(id: completedID)
@@ -715,10 +717,10 @@ struct MangaSyncActorCollectionTests {
         let (actor, _) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
         _ = try await actor.cacheDetail(monster.replacing(id: 5), now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: 5, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.removeCollectionEntry(mangaID: Self.monsterID, now: Self.t2)
-        try await actor.removeCollectionEntry(mangaID: Self.berserkID, now: Self.t3)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: 5, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.removeCollectionEntry(mangaID: Self.monsterID, account: nil, now: Self.t2)
+        try await actor.removeCollectionEntry(mangaID: Self.berserkID, account: nil, now: Self.t3)
 
         let ids = try await actor.pendingMangaIDs()
 
@@ -728,8 +730,8 @@ struct MangaSyncActorCollectionTests {
     @Test func `pendingMangaIDs includes the mangas whose operation is blocked`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.removeCollectionEntry(mangaID: Self.berserkID, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.removeCollectionEntry(mangaID: Self.berserkID, account: nil, now: Self.t2)
         let blockedID = try Self.operationID(mangaID: Self.monsterID, in: container)
         var isBlocked = false
         for _ in 1 ... 3 {
@@ -746,11 +748,11 @@ struct MangaSyncActorCollectionTests {
         let (actor, _) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
         _ = try await actor.cacheDetail(berserk, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t2)
-        try await actor.removeCollectionEntry(mangaID: Self.monsterID, now: Self.t3)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t2)
+        try await actor.removeCollectionEntry(mangaID: Self.monsterID, account: nil, now: Self.t3)
 
-        let drained = try await actor.drainPendingOperations()
+        let drained = try await actor.drainPendingOperations(for: CollectionTestSupport.account)
 
         #expect(drained.map(\.mangaID) == [Self.berserkID, Self.monsterID])
         #expect(drained.map(\.type) == [.upsert, .delete])
@@ -759,10 +761,10 @@ struct MangaSyncActorCollectionTests {
     @Test func `Completing an operation that was replaced while in flight leaves the replacement queued`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
         let inFlightID = try Self.operationID(mangaID: Self.monsterID, in: container)
         // The intention that replaces the one being sent.
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: nil, completeCollection: true, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2], readingVolume: nil, completeCollection: true, account: nil, now: Self.t2)
 
         try await actor.markOperationCompleted(id: inFlightID)
 
@@ -785,9 +787,9 @@ struct MangaSyncActorCollectionTests {
     @Test func `Failing an operation that was replaced while in flight reports not blocked and leaves the replacement untouched`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
         let inFlightID = try Self.operationID(mangaID: Self.monsterID, in: container)
-        try await actor.removeCollectionEntry(mangaID: Self.monsterID, now: Self.t2)
+        try await actor.removeCollectionEntry(mangaID: Self.monsterID, account: nil, now: Self.t2)
 
         let isBlocked = try await actor.markOperationFailed(id: inFlightID, error: "timeout", maxAttempts: 1, now: Self.t3)
 

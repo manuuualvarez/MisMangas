@@ -122,6 +122,7 @@ extension SharedMockSuites {
                 volumesOwned: [1, 2],
                 readingVolume: 2,
                 completeCollection: false,
+                account: nil,
                 now: thirtyDaysAgo
             )
             CatalogMockScenario.set(.mangaByID, .fixture("manga_monster.json"))
@@ -198,6 +199,7 @@ extension SharedMockSuites {
                 volumesOwned: [1, 2],
                 readingVolume: 2,
                 completeCollection: false,
+                account: nil,
                 now: now
             )
             CatalogMockScenario.set(.mangaByID, .fixture("manga_monster.json"))

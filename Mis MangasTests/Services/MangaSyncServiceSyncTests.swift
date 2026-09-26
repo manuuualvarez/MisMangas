@@ -36,7 +36,11 @@ extension SharedMockSuites {
             self.security = security
             let changes = CallCounter()
             self.changes = changes
-            service = Self.makeService(actor: made.actor, collectionRepository: DefaultCollectionRepositoryTest(security: security)) {
+            service = Self.makeService(
+                actor: made.actor,
+                collectionRepository: DefaultCollectionRepositoryTest(security: security),
+                account: CollectionTestSupport.account
+            ) {
                 changes.increment()
             }
         }
@@ -44,6 +48,7 @@ extension SharedMockSuites {
         private static func makeService(
             actor: MangaSyncActor,
             collectionRepository: (any CollectionRepository)?,
+            account: String?,
             onCollectionChanged: (@Sendable () -> Void)? = nil
         ) -> MangaSyncService {
             let mangaRepository = DefaultMangaRepositoryTest()
@@ -52,12 +57,14 @@ extension SharedMockSuites {
                 mangaRepository: mangaRepository,
                 taxonomyCache: TaxonomyCacheActor(mangaRepository: mangaRepository),
                 collectionRepository: collectionRepository,
+                account: account,
                 onCollectionChanged: onCollectionChanged
             )
         }
 
-        /// Stores the mangas and queues one upsert per id, in the given order, one second apart.
-        private func queueUpserts(_ ids: [Int]) async throws {
+        /// Stores the mangas and queues one upsert per id, in the given order, one second apart, made
+        /// under `account` (by default the account of the service).
+        private func queueUpserts(_ ids: [Int], account: String? = CollectionTestSupport.account) async throws {
             try await CollectionTestSupport.storeMangas(ids, in: actor, now: Self.t0)
             for (offset, id) in ids.enumerated() {
                 try await actor.saveCollectionEntry(
@@ -65,6 +72,7 @@ extension SharedMockSuites {
                     volumesOwned: [id],
                     readingVolume: nil,
                     completeCollection: false,
+                    account: account,
                     now: Self.t0.addingTimeInterval(TimeInterval(offset + 1))
                 )
             }
@@ -78,7 +86,7 @@ extension SharedMockSuites {
 
         @Test func `A save makes no network call and the next pass uploads it with the Bearer token`() async throws {
             try await CollectionTestSupport.storeMangas([1], in: actor, now: Self.t0)
-            try await service.saveCollectionEntry(mangaID: 1, volumesOwned: [2, 1], readingVolume: 2, completeCollection: false)
+            try await service.saveCollectionEntry(mangaID: 1, volumesOwned: [2, 1], readingVolume: 2, completeCollection: false, account: CollectionTestSupport.account)
             #expect(CollectionMockScenario.totalHits() == 0)
             CollectionMockScenario.set(.collectionUpsert, .status(201))
             CollectionMockScenario.set(.collectionList, CollectionMockScenario.emptyCollection)
@@ -216,7 +224,7 @@ extension SharedMockSuites {
 
         @Test func `A delete of an entry the server no longer has counts as applied`() async throws {
             try await queueUpserts([7])
-            try await actor.removeCollectionEntry(mangaID: 7, now: Self.t0.addingTimeInterval(10))
+            try await actor.removeCollectionEntry(mangaID: 7, account: CollectionTestSupport.account, now: Self.t0.addingTimeInterval(10))
             CollectionMockScenario.set(.collectionDelete, CollectionMockScenario.errorBody(status: 404, reason: "This manga is not at user collection."))
             CollectionMockScenario.set(.collectionList, CollectionMockScenario.emptyCollection)
 
@@ -227,6 +235,21 @@ extension SharedMockSuites {
             #expect(CollectionMockScenario.deletedMangaIDs() == [7])
             #expect(CollectionMockScenario.hits(.collectionUpsert) == 0)
             #expect(CollectionMockScenario.lastRequest(.collectionDelete)?.header("Authorization") == "Bearer \(Self.token)")
+            #expect(try operations().isEmpty)
+        }
+
+        @Test func `A pass never uploads the queue of another account, and uploads the guest's as its own`() async throws {
+            try await queueUpserts([1], account: CollectionTestSupport.otherAccount)
+            try await queueUpserts([2], account: nil)
+            CollectionMockScenario.set(.collectionUpsert, .status(201))
+            CollectionMockScenario.set(.collectionList, CollectionMockScenario.emptyCollection)
+
+            let result = try await service.synchronizeCollection()
+
+            #expect(result.applied == 1)
+            #expect(try CollectionMockScenario.uploadedMangaIDs() == [2])
+            #expect(CollectionMockScenario.hits(.collectionList) == 1)
+            // The other account's upload is gone for good: no later pass of this account sends it.
             #expect(try operations().isEmpty)
         }
 
@@ -295,7 +318,7 @@ extension SharedMockSuites {
 
         @Test func `A guest pass returns an empty result without network and keeps the queue`() async throws {
             try await queueUpserts([1])
-            let guest = Self.makeService(actor: actor, collectionRepository: nil)
+            let guest = Self.makeService(actor: actor, collectionRepository: nil, account: nil)
 
             let result = try await guest.synchronizeCollection()
 

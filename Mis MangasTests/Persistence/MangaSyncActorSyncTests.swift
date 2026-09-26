@@ -50,8 +50,8 @@ struct MangaSyncActorSyncTests {
     @Test func `A snapshot leaves the entries of mangas with a pending or blocked operation as the user saved them`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         try await CollectionTestSupport.storeMangas([1, 2], in: actor, now: Self.t0)
-        try await actor.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: 2, volumesOwned: [2], readingVolume: nil, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: 2, volumesOwned: [2], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
         try await CollectionTestSupport.block(mangaID: 2, in: actor, container: container, now: Self.t1)
         // The server has Monster and Berserk with other values, plus a third entry nobody queued.
         let remote = try CollectionTestSupport.remoteCollection()
@@ -77,8 +77,8 @@ struct MangaSyncActorSyncTests {
         try await actor.upsertCollectionEntry(from: berserk.replacing(mangaID: 50), now: Self.t0)
         // 51: pending; 52: blocked.
         try await CollectionTestSupport.storeMangas([51, 52], in: actor, now: Self.t0)
-        try await actor.saveCollectionEntry(mangaID: 51, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: 52, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: 51, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: 52, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
         try await CollectionTestSupport.block(mangaID: 52, in: actor, container: container, now: Self.t1)
 
         let result = try await actor.applyRemoteSnapshot([], now: Self.t2)
@@ -126,11 +126,11 @@ struct MangaSyncActorSyncTests {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         try await CollectionTestSupport.storeMangas([1, 2, 3], in: actor, now: Self.t0)
         for id in [1, 2, 3] {
-            try await actor.saveCollectionEntry(mangaID: id, volumesOwned: [id], readingVolume: nil, completeCollection: false, now: Self.t1)
+            try await actor.saveCollectionEntry(mangaID: id, volumesOwned: [id], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
         }
         try await CollectionTestSupport.block(mangaID: 2, in: actor, container: container, now: Self.t2)
 
-        let counts = try await actor.pendingOperationCounts()
+        let counts = try await actor.pendingOperationCounts(for: CollectionTestSupport.account)
 
         #expect(counts.pending == 2)
         #expect(counts.blocked == 1)
@@ -139,8 +139,8 @@ struct MangaSyncActorSyncTests {
     @Test func `clearOutbox deletes every queued operation and keeps the entries`() async throws {
         let (actor, container) = try PersistenceTestSupport.makeActor()
         try await CollectionTestSupport.storeMangas([1, 2], in: actor, now: Self.t0)
-        try await actor.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: 2, volumesOwned: [2], readingVolume: nil, completeCollection: true, now: Self.t2)
+        try await actor.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: 2, volumesOwned: [2], readingVolume: nil, completeCollection: true, account: nil, now: Self.t2)
         try await CollectionTestSupport.block(mangaID: 2, in: actor, container: container, now: Self.t3)
 
         try await actor.clearOutbox()
@@ -160,12 +160,150 @@ struct MangaSyncActorSyncTests {
         seeding.insert(unreadable)
         try seeding.save()
         try await CollectionTestSupport.storeMangas([1], in: actor, now: Self.t0)
-        try await actor.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false, now: Self.t1)
+        try await actor.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
 
-        let drained = try await actor.drainPendingOperations()
+        let drained = try await actor.drainPendingOperations(for: CollectionTestSupport.account)
 
         #expect(drained.map(\.mangaID) == [1])
         let context = PersistenceTestSupport.freshContext(container)
         #expect(try CollectionTestSupport.operations(in: context).map(\.mangaID) == [1])
+    }
+
+    // MARK: - Owner of each queued operation
+
+    private static let accountA = "a@example.com"
+    private static let accountB = "b@example.com"
+
+    /// Queues an upsert of `mangaID` made under `account` (`nil`: a guest) at `now`.
+    private static func queueSave(_ mangaID: Int, account: String?, now: Date, in actor: MangaSyncActor) async throws {
+        try await actor.saveCollectionEntry(
+            mangaID: mangaID,
+            volumesOwned: [1],
+            readingVolume: nil,
+            completeCollection: false,
+            account: account,
+            now: now
+        )
+    }
+
+    @Test func `A save and a removal stamp on their queued operation the account they were made under`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await CollectionTestSupport.storeMangas([1, 2], in: actor, now: Self.t0)
+
+        try await Self.queueSave(1, account: Self.accountA, now: Self.t1, in: actor)
+        try await Self.queueSave(2, account: nil, now: Self.t1, in: actor)
+        try await actor.removeCollectionEntry(mangaID: 3, account: Self.accountA, now: Self.t1)
+        try await actor.removeCollectionEntry(mangaID: 4, account: nil, now: Self.t1)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let operations = try CollectionTestSupport.operationsByManga(in: context)
+        #expect(operations.map(\.mangaID) == [1, 2, 3, 4])
+        #expect(operations.map(\.operationType) == ["upsert", "upsert", "delete", "delete"])
+        #expect(operations.map(\.account) == [Self.accountA, nil, Self.accountA, nil])
+    }
+
+    @Test func `A new intention for a manga replaces its queued operation together with the account that owned it`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await CollectionTestSupport.storeMangas([1, 2], in: actor, now: Self.t0)
+        try await Self.queueSave(1, account: Self.accountA, now: Self.t1, in: actor)
+        try await Self.queueSave(2, account: nil, now: Self.t1, in: actor)
+
+        try await Self.queueSave(1, account: nil, now: Self.t2, in: actor)
+        try await actor.removeCollectionEntry(mangaID: 2, account: Self.accountB, now: Self.t2)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        let operations = try CollectionTestSupport.operationsByManga(in: context)
+        #expect(operations.map(\.mangaID) == [1, 2])
+        #expect(operations.map(\.account) == [nil, Self.accountB])
+    }
+
+    @Test func `Draining for an account returns its operations and the guest's oldest first, deletes another account's and adopts the guest's`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await CollectionTestSupport.storeMangas([1, 2, 3], in: actor, now: Self.t0)
+        // Oldest first: a guest delete (4), another account's save (1), a guest save (2), then one of B (3).
+        try await actor.removeCollectionEntry(mangaID: 4, account: nil, now: Self.t0)
+        try await Self.queueSave(1, account: Self.accountA, now: Self.t1, in: actor)
+        try await Self.queueSave(2, account: nil, now: Self.t2, in: actor)
+        try await Self.queueSave(3, account: Self.accountB, now: Self.t3, in: actor)
+
+        let drained = try await actor.drainPendingOperations(for: Self.accountB)
+
+        #expect(drained.map(\.mangaID) == [4, 2, 3])
+        #expect(drained.map(\.type) == [.delete, .upsert, .upsert])
+        let context = PersistenceTestSupport.freshContext(container)
+        let remaining = try CollectionTestSupport.operations(in: context)
+        #expect(remaining.map(\.mangaID) == [4, 2, 3])
+        #expect(remaining.map(\.account) == [Self.accountB, Self.accountB, Self.accountB])
+        // The entry A saved stays on the device; only its upload is gone.
+        #expect(try CollectionTestSupport.entries(in: context).map(\.mangaID) == [1, 2, 3])
+    }
+
+    @Test func `Draining for an account deletes another account's blocked operations and adopts the guest's blocked ones without returning them`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await CollectionTestSupport.storeMangas([1, 2, 3], in: actor, now: Self.t0)
+        try await Self.queueSave(1, account: Self.accountA, now: Self.t1, in: actor)
+        try await Self.queueSave(2, account: nil, now: Self.t1, in: actor)
+        try await Self.queueSave(3, account: Self.accountB, now: Self.t1, in: actor)
+        try await CollectionTestSupport.block(mangaID: 1, in: actor, container: container, now: Self.t2)
+        try await CollectionTestSupport.block(mangaID: 2, in: actor, container: container, now: Self.t2)
+
+        let drained = try await actor.drainPendingOperations(for: Self.accountB)
+
+        #expect(drained.map(\.mangaID) == [3])
+        let context = PersistenceTestSupport.freshContext(container)
+        let remaining = try CollectionTestSupport.operationsByManga(in: context)
+        #expect(remaining.map(\.mangaID) == [2, 3])
+        #expect(remaining.map(\.account) == [Self.accountB, Self.accountB])
+        #expect(remaining.first?.blockedAt == Self.t2)
+    }
+
+    @Test(arguments: [
+        (CollectionTestSupport.otherAccount as String?, 3, 1),
+        (MangaSyncActorSyncTests.accountA as String?, 3, 2),
+        (nil as String?, 2, 1),
+    ])
+    func `pendingOperationCounts counts the operations of the account and the guest's, and changes nothing`(account: String?, pending: Int, blocked: Int) async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await CollectionTestSupport.storeMangas(Array(1 ... 6), in: actor, now: Self.t0)
+        // A: 1 pending, 2 blocked. Guest: 3 and 4 pending, 5 blocked. Other account: 6 pending.
+        try await Self.queueSave(1, account: Self.accountA, now: Self.t1, in: actor)
+        try await Self.queueSave(2, account: Self.accountA, now: Self.t1, in: actor)
+        try await Self.queueSave(3, account: nil, now: Self.t1, in: actor)
+        try await Self.queueSave(4, account: nil, now: Self.t1, in: actor)
+        try await Self.queueSave(5, account: nil, now: Self.t1, in: actor)
+        try await Self.queueSave(6, account: CollectionTestSupport.otherAccount, now: Self.t1, in: actor)
+        try await CollectionTestSupport.block(mangaID: 2, in: actor, container: container, now: Self.t2)
+        try await CollectionTestSupport.block(mangaID: 5, in: actor, container: container, now: Self.t2)
+
+        let counts = try await actor.pendingOperationCounts(for: account)
+
+        #expect(counts.pending == pending)
+        #expect(counts.blocked == blocked)
+        let context = PersistenceTestSupport.freshContext(container)
+        let stored = try CollectionTestSupport.operationsByManga(in: context)
+        #expect(stored.map(\.account) == [Self.accountA, Self.accountA, nil, nil, nil, CollectionTestSupport.otherAccount])
+    }
+
+    // MARK: - Handing the collection over to another account
+
+    @Test func `handOverCollection keeps only the changes of the new account and the guest's, and the entries they touch`() async throws {
+        let (actor, container) = try PersistenceTestSupport.makeActor()
+        try await CollectionTestSupport.storeMangas([1, 2, 3, 4], in: actor, now: Self.t0)
+        // Manga 1: synced by the previous account, nothing queued.
+        try await actor.saveCollectionEntry(mangaID: 1, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: Self.accountA, now: Self.t0)
+        try await actor.clearOutbox()
+        try await actor.saveCollectionEntry(mangaID: 2, volumesOwned: [2], readingVolume: nil, completeCollection: false, account: nil, now: Self.t0)
+        try await actor.saveCollectionEntry(mangaID: 3, volumesOwned: [3], readingVolume: nil, completeCollection: false, account: Self.accountA, now: Self.t0)
+        try await actor.saveCollectionEntry(mangaID: 4, volumesOwned: [4], readingVolume: nil, completeCollection: false, account: Self.accountB, now: Self.t0)
+
+        try await actor.handOverCollection(to: Self.accountB)
+
+        let context = PersistenceTestSupport.freshContext(container)
+        #expect(try CollectionTestSupport.entries(in: context).map(\.mangaID) == [2, 4])
+        let operations = try CollectionTestSupport.operationsByManga(in: context)
+        #expect(operations.map(\.mangaID) == [2, 4])
+        #expect(operations.map(\.account) == [nil, Self.accountB])
+        let mangas = try context.fetch(FetchDescriptor<Manga>(sortBy: [SortDescriptor(\.id)]))
+        #expect(mangas.map(\.inCollection) == [false, true, false, true])
     }
 }

@@ -97,7 +97,7 @@ struct CollectionListView: View {
         mangas: mangas,
         stats: CollectionStats(mangas: mangas),
         selection: $selection,
-        viewModel: CollectionViewModel(syncService: dependencies.syncService),
+        viewModel: dependencies.makeCollectionViewModel(presentsRejections: true),
         namespace: namespace
     )
 }

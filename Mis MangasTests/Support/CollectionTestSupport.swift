@@ -13,6 +13,27 @@ import SwiftData
 /// `collection_response.json` entries and entries derived from them, stored mangas to hang
 /// entries from, blocked operations, and fresh-context reads of entries and the outbox.
 enum CollectionTestSupport {
+    /// The account of a signed-in session: the email the fakes sign in with, lowercased, as the
+    /// session hands it to every write and to the drain.
+    static let account = "reader@example.com"
+
+    /// Another account, whose queued operations a session of `account` must never send.
+    static let otherAccount = "other@example.com"
+
+    /// A service over `actor`. With an account it reaches the collection on the server through a
+    /// repository whose session is `security`; without one it is the guest's, which stays on the
+    /// device.
+    static func makeService(actor: MangaSyncActor, account: String?, security: any SecurityData) -> MangaSyncService {
+        let mangaRepository = DefaultMangaRepositoryTest()
+        return MangaSyncService(
+            syncActor: actor,
+            mangaRepository: mangaRepository,
+            taxonomyCache: TaxonomyCacheActor(mangaRepository: mangaRepository),
+            collectionRepository: account == nil ? nil : DefaultCollectionRepositoryTest(security: security),
+            account: account
+        )
+    }
+
     /// The two entries of `collection_response.json`: Monster (id 1) and Berserk (id 2).
     static func remoteCollection() throws -> [UserMangaCollectionDTO] {
         try JSONDecoder.app.decode([UserMangaCollectionDTO].self, from: TestFixtures.data("collection_response.json"))
@@ -63,6 +84,11 @@ enum CollectionTestSupport {
     /// Queued operations, oldest first.
     static func operations(in context: ModelContext) throws -> [PendingOperation] {
         try PersistenceTestSupport.fetchAll(PendingOperation.self, in: context, sortBy: [SortDescriptor(\.createdAt)])
+    }
+
+    /// Queued operations sorted by manga id, for tests that read them by manga.
+    static func operationsByManga(in context: ModelContext) throws -> [PendingOperation] {
+        try PersistenceTestSupport.fetchAll(PendingOperation.self, in: context, sortBy: [SortDescriptor(\.mangaID)])
     }
 }
 

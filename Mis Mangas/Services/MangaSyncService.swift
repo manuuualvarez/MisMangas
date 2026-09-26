@@ -19,6 +19,8 @@ struct MangaSyncService {
     let taxonomyCache: TaxonomyCacheActor
     /// The user's collection on the server; `nil` for a guest, whose collection stays local.
     let collectionRepository: (any CollectionRepository)?
+    /// The account whose queue the signed-in passes send; `nil` for a guest.
+    let account: String?
     /// Called once at the end of every synchronization pass that reaches the server snapshot.
     let onCollectionChanged: (@Sendable () -> Void)?
 
@@ -27,12 +29,14 @@ struct MangaSyncService {
         mangaRepository: any MangaRepository,
         taxonomyCache: TaxonomyCacheActor,
         collectionRepository: (any CollectionRepository)? = nil,
+        account: String? = nil,
         onCollectionChanged: (@Sendable () -> Void)? = nil
     ) {
         self.syncActor = syncActor
         self.mangaRepository = mangaRepository
         self.taxonomyCache = taxonomyCache
         self.collectionRepository = collectionRepository
+        self.account = account
         self.onCollectionChanged = onCollectionChanged
     }
 
@@ -118,19 +122,21 @@ struct MangaSyncService {
         mangaID: Int,
         volumesOwned: [Int],
         readingVolume: Int?,
-        completeCollection: Bool
+        completeCollection: Bool,
+        account: String?
     ) async throws(PersistenceError) {
         try await syncActor.saveCollectionEntry(
             mangaID: mangaID,
             volumesOwned: volumesOwned,
             readingVolume: readingVolume,
-            completeCollection: completeCollection
+            completeCollection: completeCollection,
+            account: account
         )
     }
 
     /// Removes the entry locally and queues its deletion; the actor does both in one transaction.
-    func removeCollectionEntry(mangaID: Int) async throws(PersistenceError) {
-        try await syncActor.removeCollectionEntry(mangaID: mangaID)
+    func removeCollectionEntry(mangaID: Int, account: String?) async throws(PersistenceError) {
+        try await syncActor.removeCollectionEntry(mangaID: mangaID, account: account)
     }
 
     /// One synchronization pass: sends the queued operations oldest first, then applies the
@@ -142,13 +148,13 @@ struct MangaSyncService {
     /// rest of the queue untouched; cancelled → the pass stops without marking it; a delete the
     /// server no longer had → applied; any other refusal → discarded and reported in `rejected`.
     func synchronizeCollection() async throws(SyncError) -> SyncResult {
-        guard let collectionRepository else {
+        guard let collectionRepository, let account else {
             return SyncResult(applied: 0, blocked: 0, rejected: [], upserted: 0, removed: 0)
         }
         var applied = 0
         var blocked = 0
         var rejected: [Int] = []
-        for operation in try await persistence({ () throws(PersistenceError) in try await syncActor.drainPendingOperations() }) {
+        for operation in try await persistence({ () throws(PersistenceError) in try await syncActor.drainPendingOperations(for: account) }) {
             // A stopped pass sends nothing more: the session may be changing hands.
             guard !Task.isCancelled else {
                 return SyncResult(applied: applied, blocked: blocked, rejected: rejected, upserted: 0, removed: 0)
@@ -194,6 +200,21 @@ struct MangaSyncService {
         }
         onCollectionChanged?()
         return SyncResult(applied: applied, blocked: blocked, rejected: rejected, upserted: snapshot.upserted, removed: snapshot.removed)
+    }
+
+    /// Whether passes reach the server: a signed-in account with its repository.
+    var isSignedIn: Bool {
+        collectionRepository != nil && account != nil
+    }
+
+    /// The queued changes of this service's account and the guest's, waiting and blocked.
+    func pendingOperationCounts() async throws(PersistenceError) -> (pending: Int, blocked: Int) {
+        try await syncActor.pendingOperationCounts(for: account)
+    }
+
+    /// Gives every blocked change a fresh start in the queue.
+    func unblockAll() async throws(PersistenceError) {
+        try await syncActor.unblockAll()
     }
 
     /// Author suggestions for the catalog filters, straight from the backend.

@@ -31,9 +31,9 @@ final class AppDependencies {
     let session: SessionViewModel
     /// Whether the coordinator runs the signed-in service.
     private(set) var isSessionActive = false
-    /// The service for a session: signed in, it reaches the user's collection on the server
+    /// The service for a session: signed in to an account, it reaches the user's collection on the server
     /// through `collectionRepository`; as a guest, the collection stays on the device.
-    private let makeSyncService: @MainActor (Bool) -> MangaSyncService
+    private let makeSyncService: @MainActor (String?) -> MangaSyncService
 
     init(
         container: ModelContainer,
@@ -53,12 +53,13 @@ final class AppDependencies {
         self.collectionRepository = collectionRepository
         syncService = MangaSyncService(syncActor: syncActor, mangaRepository: mangaRepository, taxonomyCache: taxonomyCache)
         syncCoordinator = SyncCoordinator(service: syncService)
-        makeSyncService = { [syncActor, taxonomyCache] authenticated in
+        makeSyncService = { [syncActor, taxonomyCache] account in
             MangaSyncService(
                 syncActor: syncActor,
                 mangaRepository: mangaRepository,
                 taxonomyCache: taxonomyCache,
-                collectionRepository: authenticated ? collectionRepository : nil
+                collectionRepository: account == nil ? nil : collectionRepository,
+                account: account
             )
         }
         session = SessionViewModel(
@@ -71,10 +72,24 @@ final class AppDependencies {
     }
 
     /// Follows a change of session: the coordinator stops the passes of the previous one and
-    /// continues with the service of the new one.
-    func applySession(authenticated: Bool) async {
-        isSessionActive = authenticated
-        await syncCoordinator.replaceService(makeSyncService(authenticated))
+    /// continues with the service of the new one. Returns a subscription to the events of the new
+    /// session only.
+    @discardableResult
+    func applySession(account: String?) async -> AsyncStream<SyncEvent> {
+        isSessionActive = account != nil
+        return await syncCoordinator.replaceService(makeSyncService(account))
+    }
+
+    /// The control state of a screen that edits or syncs the collection: the screens' service, the
+    /// app's coordinator and the session whose account stamps every change. Only the screen that
+    /// shows the refusal notice presents it.
+    func makeCollectionViewModel(presentsRejections: Bool) -> CollectionViewModel {
+        CollectionViewModel(
+            syncService: syncService,
+            syncCoordinator: syncCoordinator,
+            session: session,
+            presentsRejections: presentsRejections
+        )
     }
 
     /// The real store in the App Group container and the real backend.
