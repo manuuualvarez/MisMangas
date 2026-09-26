@@ -102,6 +102,11 @@ struct MangaSyncService {
         try await syncActor.cacheDetail(dto)
     }
 
+    /// Whether the store holds the manga `id`.
+    func hasManga(id: Int) async throws(PersistenceError) -> Bool {
+        try await syncActor.hasManga(id: id)
+    }
+
     /// Asks the server for the full record of `mangaID` and stores it. Store failures surface as
     /// `APIError.unknown`.
     func refreshDetail(mangaID: Int) async throws(APIError) {

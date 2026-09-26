@@ -48,6 +48,10 @@ final class CollectionViewModel {
     private(set) var syncError: SyncError?
     /// Whether the collection shows `syncError`.
     var isSyncErrorPresented = false
+    /// Why the manga of the last link could not be opened.
+    private(set) var deepLinkError: APIError?
+    /// Whether the collection shows `deepLinkError`.
+    var isDeepLinkErrorPresented = false
 
     /// `presentsRejections`: whether this screen shows the refusal notice. Only one screen does, so
     /// the notice is never raised where nothing can dismiss it.
@@ -157,6 +161,29 @@ final class CollectionViewModel {
                 await refreshCounts()
             }
         }
+    }
+
+    /// Makes sure the store holds the manga of a link, bringing it from the server when it is
+    /// missing. Returns whether the collection can show it. A store that cannot be read counts as
+    /// not holding it; a cancelled link fails nothing.
+    func prepareDeepLinkedManga(id: Int) async -> Bool {
+        if (try? await syncService.hasManga(id: id)) == true {
+            return true
+        }
+        do {
+            try await syncService.refreshDetail(mangaID: id)
+        } catch .cancelled {
+            return false
+        } catch {
+            // A failure that arrives once the link was already cancelled is not shown.
+            guard !Task.isCancelled else {
+                return false
+            }
+            deepLinkError = error
+            isDeepLinkErrorPresented = true
+            return false
+        }
+        return true
     }
 
     /// Whether the screen offers to sync: only a signed-in session reaches the server.

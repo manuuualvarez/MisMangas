@@ -15,10 +15,14 @@ import SwiftUI
 /// service of that account and the maintenance runs, with a first pass when signed in; back in the
 /// foreground, a signed-in app syncs again. A pass that finds the session rejected by the server,
 /// whoever asked for it, ends the session here. The watch's reading list follows the session.
+/// A link to a manga waits here while the session restores or the welcome screen shows, and
+/// reaches the tabs as soon as they appear.
 struct RootView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(SessionViewModel.self) private var session
     @Environment(\.scenePhase) private var scenePhase
+    /// The manga of the last valid link, until My Collection opens it.
+    @State private var pendingMangaID: Int?
 
     /// The account the dependencies follow (`nil` inside: no account); nothing while the launch is
     /// restoring.
@@ -35,7 +39,13 @@ struct RootView: View {
             } else if session.isWelcomeRequired {
                 WelcomeView()
             } else {
-                MainTabView()
+                MainTabView(pendingMangaID: $pendingMangaID)
+            }
+        }
+        .onOpenURL { url in
+            // A link that is not a manga's changes nothing.
+            if let link = MangaDeepLink(url: url) {
+                pendingMangaID = link.mangaID
             }
         }
         .task {

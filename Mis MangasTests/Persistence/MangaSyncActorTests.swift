@@ -277,6 +277,39 @@ struct MangaSyncActorTests {
         #expect(best == storedBest)
     }
 
+    // MARK: - Presence
+
+    @Test func `hasManga finds a manga cached as a detail and no other id`() async throws {
+        let (actor, _) = try PersistenceTestSupport.makeActor()
+        let monster = try CollectionTestSupport.monster()
+        _ = try await actor.cacheDetail(monster)
+
+        let hasCached = try await actor.hasManga(id: monster.id)
+        let hasOther = try await actor.hasManga(id: monster.id + 1)
+
+        #expect(hasCached)
+        #expect(!hasOther)
+    }
+
+    @Test func `hasManga finds every manga a catalog page stored and none of the ids the page skips`() async throws {
+        let (actor, _) = try PersistenceTestSupport.makeActor()
+        try await actor.replaceCatalogPage(modeKey: "all", page: 1, per: 20, dtos: allPage1)
+        let storedIDs = Set(allPage1.map(\.id))
+        let highest = try #require(storedIDs.max())
+        // The fixture skips ids inside its own range, so these are real gaps next to stored mangas.
+        let skippedIDs = Set(1 ... highest).subtracting(storedIDs)
+        try #require(!skippedIDs.isEmpty)
+
+        for id in storedIDs.sorted() {
+            let isStored = try await actor.hasManga(id: id)
+            #expect(isStored, "Manga \(id) was stored by the page")
+        }
+        for id in skippedIDs.sorted() {
+            let isStored = try await actor.hasManga(id: id)
+            #expect(!isStored, "Manga \(id) was never stored")
+        }
+    }
+
     // MARK: - Catalog purge
 
     @Test func `purgeExpiredCatalog removes only the entries fetched before the cutoff`() async throws {
