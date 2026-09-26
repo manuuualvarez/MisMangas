@@ -13,7 +13,7 @@ extension Text {
     /// sizes itself on the first layout and does not grow when a subtitle appears later.
     static func catalogTotal(_ total: Int?, isFailed: Bool) -> Text {
         if let total {
-            Text("\(total, format: .number) mangas")
+            Text("^[\(total) manga](inflect: true)")
         } else if isFailed {
             // A dash on screen; words for VoiceOver, which would otherwise skip or misname it.
             Text(verbatim: "—")

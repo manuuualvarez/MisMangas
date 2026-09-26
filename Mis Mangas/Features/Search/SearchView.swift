@@ -172,12 +172,10 @@ struct SearchView: View {
             guard viewModel.searchScope == .authors, viewModel.hasAuthorQuery else {
                 return
             }
-            // One form per count: a single match must not be announced as "1 authors found".
-            var message = switch count {
-            case 0: AttributedString(localized: "No authors found")
-            case 1: AttributedString(localized: "1 author found")
-            default: AttributedString(localized: "\(count) authors found")
-            }
+            // Grammar agreement keeps a single match from being announced as "1 authors found".
+            var message = count == 0
+                ? AttributedString(localized: "No authors found")
+                : AttributedString(localized: "^[\(count) author](inflect: true) found")
             // Same reason as the suggestions: these land while the field is being typed into.
             message.accessibilitySpeechAnnouncementPriority = .low
             AccessibilityNotification.Announcement(message).post()
