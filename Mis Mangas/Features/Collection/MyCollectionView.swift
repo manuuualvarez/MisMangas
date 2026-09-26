@@ -12,7 +12,9 @@ import SwiftUI
 /// a filter (All / Reading / Complete), an order and a list or grid layout chosen from the
 /// toolbar menu. A two-column split view like the catalog: the selected manga fills the detail
 /// column on iPad and is pushed on iPhone. An empty collection offers a way to the catalog, and
-/// a chip in the detail applies its category there.
+/// a chip in the detail applies its category there. With a session, the list syncs with a pull or
+/// the toolbar's sync button (which counts the pending changes), stays current whenever a pass
+/// ends, and says in an alert when the server refused changes or the device could not sync.
 struct MyCollectionView: View {
     @Query(filter: #Predicate<Manga> { $0.inCollection == true }, sort: \Manga.title)
     private var mangas: [Manga]
@@ -30,14 +32,14 @@ struct MyCollectionView: View {
     @Namespace private var heroNamespace
 
     init(
-        syncService: MangaSyncService,
+        dependencies: AppDependencies,
         selectedTab: Binding<AppTab>,
         pendingCatalogMode: Binding<CatalogMode?>,
         filter: CollectionFilter = .all
     ) {
         _selectedTab = selectedTab
         _pendingCatalogMode = pendingCatalogMode
-        _viewModel = State(initialValue: CollectionViewModel(syncService: syncService))
+        _viewModel = State(initialValue: dependencies.makeCollectionViewModel(presentsRejections: true))
         _filter = State(initialValue: filter)
     }
 
@@ -59,6 +61,7 @@ struct MyCollectionView: View {
                             selectedTab = .catalog
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(.mmAccentFill)
                         .controlSize(.large)
                     }
                 } else if visibleMangas.isEmpty {
@@ -72,6 +75,7 @@ struct MyCollectionView: View {
                             filter = .all
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(.mmAccentFill)
                         .controlSize(.large)
                     }
                 } else {
@@ -94,12 +98,31 @@ struct MyCollectionView: View {
                     }
                 }
             }
+            // Only the list column: the detail, opened with a zoom, keeps its own gestures.
+            .refreshable {
+                await viewModel.synchronize()
+            }
+            .task {
+                await viewModel.observePasses()
+            }
             // Content, not a sidebar: the tab bar already is the app's sidebar.
             .scrollContentBackground(.hidden)
             .background(Color(.systemBackground))
             .navigationTitle("My Collection")
             .toolbar(removing: .sidebarToggle)
             .toolbar {
+                if viewModel.isSyncAvailable {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        CollectionSyncButton(pendingCount: viewModel.pendingCount) {
+                            Task {
+                                await viewModel.synchronize()
+                                if let announcement = viewModel.syncAnnouncement {
+                                    AccessibilityNotification.Announcement(announcement).post()
+                                }
+                            }
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker("Show", selection: $filter) {
@@ -122,6 +145,26 @@ struct MyCollectionView: View {
                     .accessibilityValue(Text("\(filter.title), sorted by \(sort.title), \(displayMode.title)"))
                     .accessibilityHint("Filters, sorts or changes the layout of the collection")
                 }
+            }
+            .alert(
+                "Changes rejected",
+                isPresented: $viewModel.isRejectionNoticePresented,
+                presenting: viewModel.rejectedMangaIDs.count
+            ) { _ in
+                Button("OK") {
+                    Task { await viewModel.acknowledgeRejections() }
+                }
+            } message: { count in
+                Text("^[\(count) change](inflect: true) couldn't be saved on the server, which kept its own version.")
+            }
+            .alert(
+                "Couldn't sync",
+                isPresented: $viewModel.isSyncErrorPresented,
+                presenting: viewModel.syncError
+            ) { _ in
+                Button("OK") {}
+            } message: { error in
+                Text(error.localizedDescription)
             }
             .navigationSplitViewColumnWidth(min: 380, ideal: 520, max: 720)
         } detail: {
@@ -162,19 +205,19 @@ struct MyCollectionView: View {
     @Previewable @Environment(AppDependencies.self) var dependencies
     @Previewable @State var selectedTab = AppTab.collection
     @Previewable @State var pendingMode: CatalogMode?
-    MyCollectionView(syncService: dependencies.syncService, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode)
+    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode)
 }
 
 #Preview("Reading", traits: .sampleData) {
     @Previewable @Environment(AppDependencies.self) var dependencies
     @Previewable @State var selectedTab = AppTab.collection
     @Previewable @State var pendingMode: CatalogMode?
-    MyCollectionView(syncService: dependencies.syncService, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode, filter: .reading)
+    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode, filter: .reading)
 }
 
 #Preview("Empty", traits: .emptyStore()) {
     @Previewable @Environment(AppDependencies.self) var dependencies
     @Previewable @State var selectedTab = AppTab.collection
     @Previewable @State var pendingMode: CatalogMode?
-    MyCollectionView(syncService: dependencies.syncService, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode)
+    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode)
 }

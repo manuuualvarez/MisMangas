@@ -10,5 +10,6 @@
 enum AppTab: Hashable {
     case catalog
     case collection
+    case profile
     case search
 }

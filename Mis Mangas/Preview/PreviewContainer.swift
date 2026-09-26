@@ -11,10 +11,12 @@ import SwiftUI
 /// `#Preview(traits: .sampleData)`: an in-memory store filled with `SampleData` (catalog and
 /// collection) through the same actor as the app, plus `AppDependencies` over that store and a
 /// `PreviewMangaRepository` whose `catalog` behavior the preview picks (`themes` governs
-/// `/list/themes` alone). Covers download from the network, as in the app.
+/// `/list/themes` alone), and a `PreviewSecurity` that answers sign-in and sign-up as
+/// `security`. Covers download from the network, as in the app.
 struct PreviewContainer: PreviewModifier {
     var catalog: PreviewMangaRepository.Behavior = .sample
     var themes: PreviewMangaRepository.Behavior = .sample
+    var security: PreviewSecurity.Behavior = .accepts
 
     static func makeSharedContext() async throws -> ModelContainer {
         let container = try PersistenceController.makeInMemoryContainer()
@@ -31,9 +33,11 @@ struct PreviewContainer: PreviewModifier {
     }
 
     func body(content: Content, context: ModelContainer) -> some View {
-        content
+        let dependencies = AppDependencies.preview(container: context, catalog: catalog, themes: themes, security: security)
+        return content
             .modelContainer(context)
-            .environment(AppDependencies.preview(container: context, catalog: catalog, themes: themes))
+            .environment(dependencies)
+            .environment(dependencies.session)
     }
 }
 
@@ -49,5 +53,10 @@ extension PreviewTrait where T == Preview.ViewTraits {
         themes: PreviewMangaRepository.Behavior = .sample
     ) -> PreviewTrait<Preview.ViewTraits> {
         .modifier(PreviewContainer(catalog: catalog, themes: themes))
+    }
+
+    /// Sample store, but sign-in and sign-up answer as `security`.
+    static func sampleData(security: PreviewSecurity.Behavior) -> PreviewTrait<Preview.ViewTraits> {
+        .modifier(PreviewContainer(security: security))
     }
 }

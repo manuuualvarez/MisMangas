@@ -61,6 +61,7 @@ struct MangaDetailView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(.mmAccentFill)
                 .controlSize(.large)
                 MangaCollectionStatusView(manga: manga)
                 MangaStatisticsView(volumes: manga.volumes, chapters: manga.chapters)
@@ -93,7 +94,7 @@ struct MangaDetailView: View {
             }
         }
         .sheet(isPresented: $isEditingCollection) {
-            CollectionEditorSheet(manga: manga, syncService: dependencies.syncService)
+            CollectionEditorSheet(manga: manga, dependencies: dependencies)
         }
         .task(id: selected.id) {
             let model = MangaDetailViewModel(syncService: dependencies.syncService)

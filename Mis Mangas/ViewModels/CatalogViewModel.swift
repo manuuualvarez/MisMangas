@@ -303,14 +303,14 @@ final class CatalogViewModel {
             return
         }
         isSearchingAuthors = true
-        let repository = syncService.mangaRepository
+        let syncService = syncService
         authorTask = Task {
             guard await Self.debounceElapsed() else {
                 return
             }
             let results: [AuthorDTO]
             do throws(APIError) {
-                results = try await repository.searchAuthors(query)
+                results = try await syncService.searchAuthors(query)
             } catch {
                 // Cancelled mid-flight: a newer key stroke owns the field now.
                 guard !Task.isCancelled else {

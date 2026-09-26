@@ -26,6 +26,7 @@ struct MultiSelectChipsView: View {
                 if selection.contains(option) {
                     Button(option) { selection.remove(option) }
                         .buttonStyle(.borderedProminent)
+                        .tint(.mmAccentFill)
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                         .font(.subheadline)

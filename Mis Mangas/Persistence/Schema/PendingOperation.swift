@@ -22,8 +22,10 @@ final class PendingOperation {
     var attempts: Int
     var lastError: String?
     var blockedAt: Date?
+    /// The account whose session made the change, lowercased; `nil` for a change made as a guest.
+    var account: String?
 
-    init(operationType: PendingOperationType, mangaID: Int, payload: Data? = nil, createdAt: Date = .now) {
+    init(operationType: PendingOperationType, mangaID: Int, payload: Data? = nil, createdAt: Date = .now, account: String? = nil) {
         self.id = UUID()
         self.operationType = operationType.rawValue
         self.mangaID = mangaID
@@ -32,5 +34,6 @@ final class PendingOperation {
         self.attempts = 0
         self.lastError = nil
         self.blockedAt = nil
+        self.account = account
     }
 }

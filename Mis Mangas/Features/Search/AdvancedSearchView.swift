@@ -83,6 +83,8 @@ struct AdvancedSearchView: View {
                         Task { await viewModel.applyAdvancedSearch() }
                         dismiss()
                     }
+                    // The confirming button is filled: the fill accent keeps its symbol legible.
+                    .tint(.mmAccentFill)
                 }
             }
         }

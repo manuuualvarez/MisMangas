@@ -107,13 +107,15 @@ actor MangaSyncActor {
     // MARK: - Collection
 
     /// Saves the entry of a stored manga and queues its upload, in one transaction: the entry
-    /// and the pending operation are always written together. Throws `.notFound` when the
-    /// manga is not stored: an entry always hangs from its manga.
+    /// and the pending operation are always written together. The operation keeps `account`, the
+    /// session the change was made in (`nil` as a guest). Throws `.notFound` when the manga is
+    /// not stored: an entry always hangs from its manga.
     func saveCollectionEntry(
         mangaID: Int,
         volumesOwned: [Int],
         readingVolume: Int?,
         completeCollection: Bool,
+        account: String?,
         now: Date = .now
     ) throws(PersistenceError) {
         let isStored = try run {
@@ -128,7 +130,7 @@ actor MangaSyncActor {
                 now: now
             )
             let payload = try JSONEncoder.app.encode(entry.toRequest())
-            try replacePendingOperation(.upsert, mangaID: mangaID, payload: payload, now: now)
+            try replacePendingOperation(.upsert, mangaID: mangaID, payload: payload, account: account, now: now)
             try save()
             return true
         }
@@ -138,9 +140,9 @@ actor MangaSyncActor {
     }
 
     /// Removes the entry of `mangaID`, takes the manga out of the collection and queues the
-    /// deletion, in one transaction. The manga stays cached. The deletion is queued even
-    /// without a local entry: the server may still hold one.
-    func removeCollectionEntry(mangaID: Int, now: Date = .now) throws(PersistenceError) {
+    /// deletion, in one transaction, under `account` like a save. The manga stays cached. The
+    /// deletion is queued even without a local entry: the server may still hold one.
+    func removeCollectionEntry(mangaID: Int, account: String?, now: Date = .now) throws(PersistenceError) {
         try run {
             if let entry = try fetchOne(#Predicate<UserCollectionEntry> { $0.mangaID == mangaID }) {
                 modelContext.delete(entry)
@@ -149,7 +151,7 @@ actor MangaSyncActor {
                 manga.inCollection = false
                 manga.updatedAt = now
             }
-            try replacePendingOperation(.delete, mangaID: mangaID, payload: nil, now: now)
+            try replacePendingOperation(.delete, mangaID: mangaID, payload: nil, account: account, now: now)
             try save()
         }
     }
@@ -189,26 +191,48 @@ actor MangaSyncActor {
 
     // MARK: - Outbox
 
-    /// The operations ready to send, oldest first; blocked ones wait for `unblockAll()`. The
-    /// operations stay stored until they are marked completed.
-    func drainPendingOperations() throws(PersistenceError) -> [PendingOperationSnapshot] {
+    /// The operations of `account` ready to send, oldest first; blocked ones wait for
+    /// `unblockAll()`. Settles who owns the queue in the same transaction: the operations of
+    /// another account are deleted, blocked ones included, since no other session may ever send
+    /// them, and the ones made as a guest become `account`'s, since a guest's collection goes up
+    /// with the first account that signs in. The operations stay stored until they are marked
+    /// completed. A row whose type this version cannot read could never be sent, so it is deleted
+    /// here instead of lingering in the queue.
+    func drainPendingOperations(for account: String) throws(PersistenceError) -> [PendingOperationSnapshot] {
         try run {
-            let ready = FetchDescriptor<PendingOperation>(
-                predicate: #Predicate { $0.blockedAt == nil },
-                sortBy: [SortDescriptor(\.createdAt)]
-            )
-            return try modelContext.fetch(ready).compactMap { operation in
-                guard let type = PendingOperationType(rawValue: operation.operationType) else {
-                    return nil
+            let queue = FetchDescriptor<PendingOperation>(sortBy: [SortDescriptor(\.createdAt)])
+            var snapshots: [PendingOperationSnapshot] = []
+            var hasChanges = false
+            for operation in try modelContext.fetch(queue) {
+                if let owner = operation.account, owner != account {
+                    modelContext.delete(operation)
+                    hasChanges = true
+                    continue
                 }
-                return PendingOperationSnapshot(
+                guard let type = PendingOperationType(rawValue: operation.operationType) else {
+                    modelContext.delete(operation)
+                    hasChanges = true
+                    continue
+                }
+                if operation.account == nil {
+                    operation.account = account
+                    hasChanges = true
+                }
+                guard operation.blockedAt == nil else {
+                    continue
+                }
+                snapshots.append(PendingOperationSnapshot(
                     id: operation.id,
                     type: type,
                     mangaID: operation.mangaID,
                     payload: operation.payload,
                     attempts: operation.attempts
-                )
+                ))
             }
+            if hasChanges {
+                try save()
+            }
+            return snapshots
         }
     }
 
@@ -261,6 +285,106 @@ actor MangaSyncActor {
     func pendingMangaIDs() throws(PersistenceError) -> Set<Int> {
         try run {
             Set(try modelContext.fetch(FetchDescriptor<PendingOperation>()).map(\.mangaID))
+        }
+    }
+
+    /// Queued operations still in the drain and blocked ones that the next pass of `account`
+    /// would send: its own and the guest's. `nil` counts only the guest's.
+    func pendingOperationCounts(for account: String?) throws(PersistenceError) -> (pending: Int, blocked: Int) {
+        try run {
+            let pending = try modelContext.fetchCount(FetchDescriptor<PendingOperation>(predicate: #Predicate {
+                $0.blockedAt == nil && ($0.account == nil || $0.account == account)
+            }))
+            let blocked = try modelContext.fetchCount(FetchDescriptor<PendingOperation>(predicate: #Predicate {
+                $0.blockedAt != nil && ($0.account == nil || $0.account == account)
+            }))
+            return (pending: pending, blocked: blocked)
+        }
+    }
+
+    /// Leaves the device's collection to `account` when it signs in after another one, in one
+    /// transaction: the changes of any other account are deleted, and so is every entry no change
+    /// of `account` or of a guest still refers to (the previous account's collection), taking its
+    /// manga out of the collection. A guest's changes stay, entries included, for the first pass to
+    /// upload.
+    func handOverCollection(to account: String, now: Date = .now) throws(PersistenceError) {
+        try run {
+            var kept = Set<Int>()
+            for operation in try modelContext.fetch(FetchDescriptor<PendingOperation>()) {
+                if let owner = operation.account, owner != account {
+                    modelContext.delete(operation)
+                } else {
+                    kept.insert(operation.mangaID)
+                }
+            }
+            for entry in try modelContext.fetch(FetchDescriptor<UserCollectionEntry>()) where !kept.contains(entry.mangaID) {
+                if let manga = entry.manga, manga.inCollection {
+                    manga.inCollection = false
+                    manga.updatedAt = now
+                }
+                modelContext.delete(entry)
+            }
+            try save()
+        }
+    }
+
+    /// Deletes every queued operation and leaves the entries as they are.
+    func clearOutbox() throws(PersistenceError) {
+        try run {
+            try modelContext.delete(model: PendingOperation.self)
+            try save()
+        }
+    }
+
+    // MARK: - Server snapshot
+
+    /// Makes the collection match the server's, in one transaction, except for the mangas with a
+    /// queued operation (blocked ones included), whose local intention wins. Upserts every other
+    /// entry with its nested manga and removes every local entry the server no longer has,
+    /// taking its manga out of the collection without queueing anything. An entry whose user
+    /// fields did not change keeps its `updatedAt`. Returns how many entries were written and how
+    /// many were removed: `upserted` counts only the entries created or whose user fields changed.
+    /// Throws `.cancelled` without touching the store when the calling pass was already stopped.
+    func applyRemoteSnapshot(_ dtos: [UserMangaCollectionDTO], now: Date = .now) throws(PersistenceError) -> (upserted: Int, removed: Int) {
+        guard !Task.isCancelled else {
+            throw .cancelled
+        }
+        return try run {
+            let pending = Set(try modelContext.fetch(FetchDescriptor<PendingOperation>()).map(\.mangaID))
+            let incoming = dtos.filter { !pending.contains($0.manga.id) }
+            let authors = try upsertAuthors(incoming.flatMap(\.manga.authors))
+            let mangas = try upsertMangas(incoming.map(\.manga), authors: authors, now: now)
+            var upserted = 0
+            for dto in incoming {
+                guard let manga = mangas[dto.manga.id] else {
+                    continue
+                }
+                let previousUpdate = manga.collectionEntry?.updatedAt
+                let entry = try applyEntry(
+                    to: manga,
+                    volumesOwned: dto.volumesOwned,
+                    readingVolume: dto.readingVolume,
+                    completeCollection: dto.completeCollection,
+                    now: now
+                )
+                // `applyEntry` stamps `updatedAt` only when it creates the entry or changes it.
+                if entry.updatedAt != previousUpdate {
+                    upserted += 1
+                }
+            }
+            let remoteIDs = Set(dtos.map(\.manga.id))
+            var removed = 0
+            for entry in try modelContext.fetch(FetchDescriptor<UserCollectionEntry>())
+            where !remoteIDs.contains(entry.mangaID) && !pending.contains(entry.mangaID) {
+                if let manga = entry.manga, manga.inCollection {
+                    manga.inCollection = false
+                    manga.updatedAt = now
+                }
+                modelContext.delete(entry)
+                removed += 1
+            }
+            try save()
+            return (upserted: upserted, removed: removed)
         }
     }
 }
@@ -382,12 +506,14 @@ private extension MangaSyncActor {
         return entry
     }
 
-    /// Queues a write for the server. At most one operation per manga: the new one replaces any
-    /// earlier one, since only the last intention matters, and goes to the back of the queue.
+    /// Queues a write for the server under `account`. At most one operation per manga: the new
+    /// one replaces any earlier one, owner included, since only the last intention matters, and
+    /// goes to the back of the queue.
     func replacePendingOperation(
         _ type: PendingOperationType,
         mangaID: Int,
         payload: Data?,
+        account: String?,
         now: Date
     ) throws {
         let previous = try modelContext.fetch(
@@ -396,6 +522,6 @@ private extension MangaSyncActor {
         for operation in previous {
             modelContext.delete(operation)
         }
-        modelContext.insert(PendingOperation(operationType: type, mangaID: mangaID, payload: payload, createdAt: now))
+        modelContext.insert(PendingOperation(operationType: type, mangaID: mangaID, payload: payload, createdAt: now, account: account))
     }
 }

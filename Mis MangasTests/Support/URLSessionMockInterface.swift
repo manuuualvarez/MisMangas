@@ -97,6 +97,12 @@ final class URLSessionMockInterface: URLProtocol {
         case ("GET", ["list", "authorsPaged"]): return .listAuthorsPaged
         case ("POST", ["list", "authorsByIds"]): return .authorsByIds
         case ("POST", ["search", "manga"]): return .customSearch
+        case ("POST", ["users"]): return .createUser
+        case ("POST", ["users", "jwt", "login"]): return .jwtLogin
+        case ("POST", ["users", "jwt", "refresh"]): return .jwtRefresh
+        case ("GET", ["users", "jwt", "me"]): return .jwtMe
+        case ("GET", ["collection", "manga"]): return .collectionList
+        case ("POST", ["collection", "manga"]): return .collectionUpsert
         default: break
         }
 
@@ -112,6 +118,7 @@ final class URLSessionMockInterface: URLProtocol {
         case ("GET", "search", "mangasBeginsWith"): return .mangasBeginsWith
         case ("GET", "search", "mangasContains"): return .mangasContains
         case ("GET", "search", "author"): return .searchAuthor
+        case ("DELETE", "collection", "manga"): return .collectionDelete
         default: return .unmatched
         }
     }
