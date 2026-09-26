@@ -12,9 +12,8 @@ import WidgetKit
 /// Lock Screen. Static: no configuration and no interaction besides opening the app.
 struct ReadingWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: .readingWidgetKind, provider: ReadingTimelineProvider()) { _ in
-            ReadingWidgetEmptyView()
-                .containerBackground(.fill.tertiary, for: .widget)
+        StaticConfiguration(kind: .readingWidgetKind, provider: ReadingTimelineProvider()) { entry in
+            ReadingWidgetView(entry: entry)
         }
         .configurationDisplayName("Reading")
         .description("The mangas you are reading and where you are in each one.")

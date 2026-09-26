@@ -22,8 +22,11 @@ struct ReadingEntry: TimelineEntry {
             ReadingWidgetItem(id: 1, title: "Monster", coverFileURL: nil, readingVolume: 7, volumes: 18),
             ReadingWidgetItem(id: 2, title: "Dragon Ball", coverFileURL: nil, readingVolume: 12, volumes: 42),
             ReadingWidgetItem(id: 3, title: "Kingdom", coverFileURL: nil, readingVolume: 30, volumes: nil),
+            ReadingWidgetItem(id: 4, title: "One Piece", coverFileURL: nil, readingVolume: 45, volumes: 110),
+            ReadingWidgetItem(id: 5, title: "Vagabond", coverFileURL: nil, readingVolume: 3, volumes: 37),
+            ReadingWidgetItem(id: 6, title: "Berserk", coverFileURL: nil, readingVolume: 20, volumes: 42),
         ],
-        totalReading: 3
+        totalReading: 6
     )
 
     /// Nothing being read, or a store the widget cannot read.

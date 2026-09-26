@@ -8,22 +8,32 @@
 import SwiftUI
 import WidgetKit
 
-/// The widget with nothing being read: a title and where to start. On the Lock Screen only the
-/// title fits.
+/// The widget with nothing being read: a title and where to start. On the rectangular Lock Screen
+/// widget only the title fits, and the circular one shows a closed book.
 struct ReadingWidgetEmptyView: View {
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Nothing in progress")
-                .font(.headline)
-            if !family.isAccessory {
-                Text("Add a manga in Mis Mangas")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        if family == .accessoryCircular {
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: "book.closed")
+                    .font(.title2)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Nothing in progress")
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nothing in progress")
+                    .font(.headline)
+                if !family.isAccessory {
+                    Text("Add a manga in Mis Mangas")
+                        .font(.caption)
+                        .foregroundStyle(.mmSecondaryLabel)
+                }
+            }
+            .accessibilityElement(children: .combine)
         }
-        .accessibilityElement(children: .combine)
     }
 }
 

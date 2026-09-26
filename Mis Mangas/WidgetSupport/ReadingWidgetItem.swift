@@ -31,4 +31,31 @@ extension ReadingWidgetItem {
     var deepLink: URL {
         MangaDeepLink(mangaID: id).url
     }
+
+    /// The volume being read, as the app writes it: "Vol. 7 of 42", or "Vol. 7" while the volume
+    /// count is unknown.
+    var volumeText: String {
+        if let volumes {
+            return String(localized: "Vol. \(readingVolume) of \(volumes)")
+        }
+        return String(localized: "Vol. \(readingVolume)")
+    }
+
+    /// The volume being read where there is little room: "7/42", or "7" while the volume count
+    /// is unknown.
+    var shortVolumeText: String {
+        if let volumes {
+            return String(localized: "\(readingVolume)/\(volumes)")
+        }
+        return readingVolume.formatted()
+    }
+
+    /// What VoiceOver reads for the manga: the title and the progress spelled out ("Dragon Ball,
+    /// reading volume 7 of 42").
+    var accessibilityLabel: String {
+        if let volumes {
+            return String(localized: "\(title), reading volume \(readingVolume) of \(volumes)")
+        }
+        return String(localized: "\(title), reading volume \(readingVolume)")
+    }
 }

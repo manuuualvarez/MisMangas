@@ -175,6 +175,7 @@
 				Persistence/Schema/PendingOperation.swift,
 				Persistence/Schema/PendingOperationType.swift,
 				Persistence/Schema/UserCollectionEntry.swift,
+				Resources/Colors.xcassets,
 				Resources/Localizable.xcstrings,
 				WidgetSupport/CoverCacheFiles.swift,
 				WidgetSupport/MangaDeepLink.swift,
