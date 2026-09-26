@@ -29,7 +29,7 @@ struct WatchMangaDetailView: View {
             readingVolume: manga.collectionEntry?.readingVolume,
             volumes: manga.volumes,
             syncActor: dependencies.syncActor,
-            transport: dependencies.transport
+            coordinator: dependencies.coordinator
         ))
     }
 
@@ -59,21 +59,23 @@ struct WatchMangaDetailView: View {
                 .accessibilityValue(manga.readingVolumeAccessibilityValue(viewModel.draft))
                 .accessibilityAdjustableAction { direction in
                     switch direction {
-                    // The view model keeps the draft within the volumes.
                     case .increment:
-                        viewModel.draft += 1
+                        viewModel.incrementDraft()
                     case .decrement:
-                        viewModel.draft -= 1
+                        viewModel.decrementDraft()
                     @unknown default:
                         break
                     }
                 }
                 Button("Mark next volume read") {
                     viewModel.markNextVolumeRead()
-                    // Focus stays on the button, away from the progress it just changed.
-                    AccessibilityNotification.Announcement(
-                        String(localized: "Reading volume \(manga.readingVolumeAccessibilityValue(viewModel.draft))")
-                    ).post()
+                    // Focus stays on the button, away from the progress it just changed. High
+                    // priority: on the last volume the button turns dimmed and would cut it short.
+                    var announcement = AttributedString(
+                        localized: "Reading volume \(manga.readingVolumeAccessibilityValue(viewModel.draft))"
+                    )
+                    announcement.accessibilitySpeechAnnouncementPriority = .high
+                    AccessibilityNotification.Announcement(announcement).post()
                 }
                 .accessibilityHint("Moves the reading volume to the next one")
                 .disabled(viewModel.isOnLastVolume)

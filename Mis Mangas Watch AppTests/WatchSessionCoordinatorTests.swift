@@ -11,9 +11,11 @@ import SwiftData
 import Testing
 
 /// The watch end of the connection: activation, reading lists arriving from the iPhone through a
-/// `FakeWatchTransport`, and the background task that waits for pending content.
+/// `FakeWatchTransport`, changes chosen on the watch on their way to the iPhone (held while the
+/// session is not activated), and the background task that waits for pending content.
 ///
-/// Oracles, never the code under test: the fake's call counts, what a fresh `ModelContext` reads
+/// Oracles, never the code under test: the fake's call counts and the updates it recorded, compared
+/// with updates written out by hand, what a fresh `ModelContext` reads
 /// from the in-memory store, the date read straight from an isolated `UserDefaults` suite, and the
 /// wall-clock interval the test measures around the arrival. The coordinator applies what arrives
 /// on its own task, so every effect is awaited with a bounded poll.
@@ -44,6 +46,10 @@ final class WatchSessionCoordinatorTests {
         updatedAt: t2
     )
 
+    private static let dragonBallVolume7 = ReadingUpdate(mangaID: 42, readingVolume: 7, sentAt: t1)
+    private static let dragonBallVolume8 = ReadingUpdate(mangaID: 42, readingVolume: 8, sentAt: t2)
+    private static let berserkVolume4 = ReadingUpdate(mangaID: 2, readingVolume: 4, sentAt: t1)
+
     /// How long a call that must still be waiting is given to return early.
     private static let stillWaiting: Duration = .milliseconds(300)
 
@@ -73,6 +79,30 @@ final class WatchSessionCoordinatorTests {
     /// The arrival date the coordinator stored, read without going through it.
     private var storedSnapshotDate: Date? {
         defaults.object(forKey: WatchSessionCoordinator.lastSnapshotKey) as? Date
+    }
+
+    /// Starts the coordinator, delivers `.activated` and returns once the coordinator has taken
+    /// it: `receivePendingContent()` only returns with the session activated and nothing pending.
+    private func startActivated() async throws {
+        await coordinator.start()
+        transport.emit(.activated(isReachable: true))
+        let completion = Completion()
+        let coordinator = self.coordinator
+        let task = Task {
+            await coordinator.receivePendingContent()
+            await completion.markDone()
+        }
+        let isActivated = await WatchPersistenceTestSupport.waitUntil { await completion.isDone }
+        task.cancel()
+        try #require(isActivated)
+    }
+
+    /// Returns once every event emitted before this call has been handled: events are handled in
+    /// order, and an empty reading list leaves its arrival date behind.
+    private func waitForEarlierEvents() async throws {
+        try #require(storedSnapshotDate == nil)
+        transport.emit(.readingSnapshot(ReadingSnapshot(generatedAt: Self.t0, items: [])))
+        try #require(await WatchPersistenceTestSupport.waitUntil { self.storedSnapshotDate != nil })
     }
 
     // MARK: - Activation
@@ -126,6 +156,114 @@ final class WatchSessionCoordinatorTests {
         }
         #expect(isSecondApplied)
         #expect(try WatchPersistenceTestSupport.entryMangaIDs(in: container) == [42])
+    }
+
+    // MARK: - Sending changes
+
+    @Test func `A change sent before the session is activated is held without an error and goes out once it activates`() async throws {
+        await coordinator.start()
+
+        try await coordinator.send(Self.dragonBallVolume7)
+        #expect(transport.sentUpdates.isEmpty)
+
+        transport.emit(.activated(isReachable: true))
+
+        let isSent = await WatchPersistenceTestSupport.waitUntil { !self.transport.sentUpdates.isEmpty }
+        #expect(isSent)
+        #expect(transport.sentUpdates == [Self.dragonBallVolume7])
+    }
+
+    @Test func `Of two changes to the same manga held before activation only the later one goes out`() async throws {
+        await coordinator.start()
+
+        try await coordinator.send(Self.dragonBallVolume7)
+        try await coordinator.send(Self.dragonBallVolume8)
+        transport.emit(.activated(isReachable: true))
+
+        let isSent = await WatchPersistenceTestSupport.waitUntil { !self.transport.sentUpdates.isEmpty }
+        #expect(isSent)
+        try await waitForEarlierEvents()
+        #expect(transport.sentUpdates == [Self.dragonBallVolume8])
+    }
+
+    @Test func `Of two changes to the same manga held before activation the one dated later wins whatever the order`() async throws {
+        await coordinator.start()
+
+        try await coordinator.send(Self.dragonBallVolume8)
+        try await coordinator.send(Self.dragonBallVolume7)
+        transport.emit(.activated(isReachable: true))
+
+        let isSent = await WatchPersistenceTestSupport.waitUntil { !self.transport.sentUpdates.isEmpty }
+        #expect(isSent)
+        try await waitForEarlierEvents()
+        #expect(transport.sentUpdates == [Self.dragonBallVolume8])
+    }
+
+    @Test func `Changes to two mangas held before activation both go out`() async throws {
+        await coordinator.start()
+
+        try await coordinator.send(Self.dragonBallVolume7)
+        try await coordinator.send(Self.berserkVolume4)
+        transport.emit(.activated(isReachable: true))
+
+        let isSent = await WatchPersistenceTestSupport.waitUntil { self.transport.sentUpdates.count >= 2 }
+        #expect(isSent)
+        try await waitForEarlierEvents()
+        #expect(transport.sentUpdates.count == 2)
+        #expect(Set(transport.sentUpdates) == [Self.dragonBallVolume7, Self.berserkVolume4])
+    }
+
+    @Test func `A held change goes out once and not again on a later activation`() async throws {
+        await coordinator.start()
+        try await coordinator.send(Self.dragonBallVolume7)
+        transport.emit(.activated(isReachable: true))
+        let isSent = await WatchPersistenceTestSupport.waitUntil { !self.transport.sentUpdates.isEmpty }
+        try #require(isSent)
+
+        transport.emit(.activated(isReachable: true))
+        try await waitForEarlierEvents()
+
+        #expect(transport.sentUpdates == [Self.dragonBallVolume7])
+    }
+
+    @Test func `With the session activated a change goes out at once`() async throws {
+        try await startActivated()
+
+        try await coordinator.send(Self.dragonBallVolume7)
+
+        #expect(transport.sentUpdates == [Self.dragonBallVolume7])
+    }
+
+    @Test func `A change the session refuses as not activated is held without an error and goes out on the next activation`() async throws {
+        try await startActivated()
+        // The session went inactive and the coordinator has not been told yet.
+        transport.configure { $0.sendError = .notActivated }
+
+        try await coordinator.send(Self.dragonBallVolume7)
+        #expect(transport.sentUpdates.isEmpty)
+
+        transport.configure { $0.sendError = nil }
+        transport.emit(.activated(isReachable: true))
+
+        let isSent = await WatchPersistenceTestSupport.waitUntil { !self.transport.sentUpdates.isEmpty }
+        #expect(isSent)
+        #expect(transport.sentUpdates == [Self.dragonBallVolume7])
+    }
+
+    @Test func `Any other failure to send is thrown to the caller`() async throws {
+        try await startActivated()
+        transport.configure { $0.sendError = .payloadTooLarge }
+
+        do throws(WatchTransportError) {
+            try await coordinator.send(Self.dragonBallVolume7)
+            Issue.record("Expected WatchTransportError.payloadTooLarge, but the change was accepted")
+        } catch {
+            guard case .payloadTooLarge = error else {
+                Issue.record("Expected WatchTransportError.payloadTooLarge, got \(error)")
+                return
+            }
+        }
+        #expect(transport.sentUpdates.isEmpty)
     }
 
     // MARK: - Background content

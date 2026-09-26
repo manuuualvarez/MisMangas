@@ -38,15 +38,15 @@ final class WatchReadingViewModel {
     private var pendingChanges = 0
 
     private let syncActor: MangaSyncActor
-    private let transport: any WatchTransport
+    private let coordinator: WatchSessionCoordinator
 
-    init(mangaID: Int, readingVolume: Int?, volumes: Int?, syncActor: MangaSyncActor, transport: any WatchTransport) {
+    init(mangaID: Int, readingVolume: Int?, volumes: Int?, syncActor: MangaSyncActor, coordinator: WatchSessionCoordinator) {
         self.mangaID = mangaID
         self.volumes = volumes
         stored = readingVolume
         draft = readingVolume ?? 1
         self.syncActor = syncActor
-        self.transport = transport
+        self.coordinator = coordinator
     }
 
     /// The volumes the reader can pick: from the first to the last, or up to the store's limit
@@ -103,6 +103,16 @@ final class WatchReadingViewModel {
         draftChanged()
     }
 
+    /// Moves the draft one volume on, never past the last one.
+    func incrementDraft() {
+        draft = min(draft + 1, readingVolumeRange.upperBound)
+    }
+
+    /// Moves the draft one volume back, never before the first one.
+    func decrementDraft() {
+        draft = max(draft - 1, readingVolumeRange.lowerBound)
+    }
+
     /// What the store now keeps for this manga, as the screen reads it. With nothing of the
     /// reader's on its way the stepper follows it (a change from the iPhone), and following it
     /// never writes or sends anything.
@@ -143,7 +153,7 @@ final class WatchReadingViewModel {
         stored = readingVolume
         WKInterfaceDevice.current().play(.click)
         do {
-            try transport.send(ReadingUpdate(mangaID: mangaID, readingVolume: readingVolume, sentAt: changedAt))
+            try await coordinator.send(ReadingUpdate(mangaID: mangaID, readingVolume: readingVolume, sentAt: changedAt))
             error = nil
         } catch {
             self.error = error

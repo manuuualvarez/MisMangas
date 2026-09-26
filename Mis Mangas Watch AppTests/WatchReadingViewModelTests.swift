@@ -17,26 +17,37 @@ import Testing
 ///
 /// Oracles, never the code under test: the store read back with a fresh `ModelContext` over the
 /// in-memory container the real `MangaSyncActor` writes to, the updates the `FakeWatchTransport`
-/// captured, the errors it was told to throw, the messages written out by hand, and the volume
-/// rules the screens state (from 1 up to the volume count, up to 300 while the count is unknown).
-@Suite("WatchReadingViewModel")
+/// captured behind a real `WatchSessionCoordinator` whose session is activated, the errors the fake
+/// was told to throw, the messages written out by hand, and the volume rules the screens state
+/// (from 1 up to the volume count, up to 300 while the count is unknown).
+///
+/// A class only for `deinit`, which ends the fake's event stream so the coordinator stops listening.
+@Suite("WatchReadingViewModel", .timeLimit(.minutes(1)))
 @MainActor
-struct WatchReadingViewModelTests {
+final class WatchReadingViewModelTests {
     private static let t0 = Date(timeIntervalSinceReferenceDate: 800_000_000)
 
-    private let transport = FakeWatchTransport()
+    private let transport: FakeWatchTransport
     private let actor: MangaSyncActor
     private let container: ModelContainer
+    private let coordinator: WatchSessionCoordinator
 
     init() throws {
         let made = try WatchPersistenceTestSupport.makeActor()
+        let transport = FakeWatchTransport()
+        self.transport = transport
         actor = made.actor
         container = made.container
+        coordinator = WatchSessionCoordinator(transport: transport, syncActor: made.actor)
+    }
+
+    deinit {
+        transport.finish()
     }
 
     /// Stores manga 42 in the collection, reading `readingVolume`, changed at `t0`, and opens its
     /// screen's view model as the screen would, from the stored values.
-    private func openReading(_ readingVolume: Int, volumes: Int?) throws -> WatchReadingViewModel {
+    private func openReading(_ readingVolume: Int, volumes: Int?) async throws -> WatchReadingViewModel {
         try WatchPersistenceTestSupport.insertManga(
             id: 42,
             volumes: volumes,
@@ -44,11 +55,30 @@ struct WatchReadingViewModelTests {
             entry: .init(readingVolume: readingVolume, updatedAt: Self.t0),
             in: container
         )
-        return makeViewModel(readingVolume: readingVolume, volumes: volumes)
+        return try await makeViewModel(readingVolume: readingVolume, volumes: volumes)
     }
 
-    private func makeViewModel(readingVolume: Int?, volumes: Int?) -> WatchReadingViewModel {
-        WatchReadingViewModel(mangaID: 42, readingVolume: readingVolume, volumes: volumes, syncActor: actor, transport: transport)
+    /// The view model over a coordinator whose session is already activated, so every change it
+    /// sends reaches the fake at once.
+    private func makeViewModel(readingVolume: Int?, volumes: Int?) async throws -> WatchReadingViewModel {
+        try await activateSession()
+        return WatchReadingViewModel(mangaID: 42, readingVolume: readingVolume, volumes: volumes, syncActor: actor, coordinator: coordinator)
+    }
+
+    /// Starts the coordinator, delivers `.activated` and returns once the coordinator has taken
+    /// it: `receivePendingContent()` only returns with the session activated and nothing pending.
+    private func activateSession() async throws {
+        await coordinator.start()
+        transport.emit(.activated(isReachable: true))
+        let activation = ActivationWait()
+        let coordinator = self.coordinator
+        let task = Task {
+            await coordinator.receivePendingContent()
+            await activation.markDone()
+        }
+        let isActivated = await WatchPersistenceTestSupport.waitUntil { await activation.isDone }
+        task.cancel()
+        try #require(isActivated)
     }
 
     /// What the stepper does: moves the draft, then tells the view model.
@@ -71,7 +101,7 @@ struct WatchReadingViewModelTests {
     // MARK: - Picking a volume
 
     @Test func `Picking a volume past the last one stores the last and sends it dated with the change`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         pick(50, on: viewModel)
         await settle(viewModel)
@@ -85,7 +115,7 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `Picking a volume below the first stores the first`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         pick(0, on: viewModel)
         await settle(viewModel)
@@ -96,7 +126,7 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `Without a known volume count a volume up to the collection limit is stored as it is`() async throws {
-        let viewModel = try openReading(7, volumes: nil)
+        let viewModel = try await openReading(7, volumes: nil)
 
         pick(60, on: viewModel)
         await settle(viewModel)
@@ -107,7 +137,7 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `Picking the stored volume writes and sends nothing`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         pick(7, on: viewModel)
         await settle(viewModel)
@@ -128,7 +158,7 @@ struct WatchReadingViewModelTests {
     // MARK: - Quick picks
 
     @Test func `Volumes picked in a row reach the store and the iPhone in the order they were picked`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         pick(8, on: viewModel)
         pick(9, on: viewModel)
@@ -145,7 +175,7 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `Going back to the stored volume before the first change lands is still written and sent`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         pick(8, on: viewModel)
         pick(7, on: viewModel)
@@ -160,7 +190,7 @@ struct WatchReadingViewModelTests {
     // MARK: - Next volume
 
     @Test func `Marking the next volume read moves one volume forward`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         viewModel.markNextVolumeRead()
         await settle(viewModel)
@@ -172,7 +202,7 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `On the last volume marking the next one read neither edits nor sends`() async throws {
-        let viewModel = try openReading(41, volumes: 42)
+        let viewModel = try await openReading(41, volumes: 42)
         #expect(!viewModel.isOnLastVolume)
 
         viewModel.markNextVolumeRead()
@@ -189,7 +219,7 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `Without a known volume count the next volume is only limited by the collection limit`() async throws {
-        let viewModel = try openReading(60, volumes: nil)
+        let viewModel = try await openReading(60, volumes: nil)
 
         viewModel.markNextVolumeRead()
         await settle(viewModel)
@@ -202,7 +232,7 @@ struct WatchReadingViewModelTests {
     // MARK: - Changes from the iPhone
 
     @Test func `A volume stored from the iPhone moves the stepper and is neither written nor sent back`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         viewModel.storedVolumeChanged(12, volumes: 42)
         viewModel.draftChanged()
@@ -214,7 +244,7 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `A volume stored from the iPhone above a smaller volume count is followed without a write`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         viewModel.storedVolumeChanged(20, volumes: 18)
         viewModel.draftChanged()
@@ -227,7 +257,7 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `While the reader's change is on its way the stepper keeps the reader's volume`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
+        let viewModel = try await openReading(7, volumes: 42)
 
         pick(8, on: viewModel)
         // The store reporting the volume it held before the change landed.
@@ -243,14 +273,14 @@ struct WatchReadingViewModelTests {
     // MARK: - Failures
 
     @Test func `A send failure is reported and the change stays on the watch`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
-        transport.configure { $0.sendError = .notActivated }
+        let viewModel = try await openReading(7, volumes: 42)
+        transport.configure { $0.sendError = .payloadTooLarge }
 
         pick(8, on: viewModel)
         await settle(viewModel)
 
-        guard case .notActivated? = viewModel.error as? WatchTransportError else {
-            Issue.record("Expected WatchTransportError.notActivated, got \(String(describing: viewModel.error))")
+        guard case .payloadTooLarge? = viewModel.error as? WatchTransportError else {
+            Issue.record("Expected WatchTransportError.payloadTooLarge, got \(String(describing: viewModel.error))")
             return
         }
         #expect(viewModel.errorMessage == "Couldn't send the change to your iPhone")
@@ -263,7 +293,7 @@ struct WatchReadingViewModelTests {
 
     @Test func `A volume that cannot be stored is reported, sends nothing and the stepper goes back`() async throws {
         try WatchPersistenceTestSupport.insertManga(id: 42, volumes: 42, updatedAt: Self.t0, entry: nil, in: container)
-        let viewModel = makeViewModel(readingVolume: 7, volumes: 42)
+        let viewModel = try await makeViewModel(readingVolume: 7, volumes: 42)
 
         pick(8, on: viewModel)
         await settle(viewModel)
@@ -279,8 +309,8 @@ struct WatchReadingViewModelTests {
     }
 
     @Test func `A success after a failure clears the error`() async throws {
-        let viewModel = try openReading(7, volumes: 42)
-        transport.configure { $0.sendError = .notActivated }
+        let viewModel = try await openReading(7, volumes: 42)
+        transport.configure { $0.sendError = .payloadTooLarge }
         pick(8, on: viewModel)
         await settle(viewModel)
         try #require(viewModel.error != nil)
@@ -294,5 +324,84 @@ struct WatchReadingViewModelTests {
         let entry = try storedEntry()
         #expect(entry.readingVolume == 9)
         #expect(transport.sentUpdates == [ReadingUpdate(mangaID: 42, readingVolume: 9, sentAt: entry.updatedAt)])
+    }
+
+    @Test func `A change the session refuses as not activated is not reported and reaches the iPhone once it activates again`() async throws {
+        let viewModel = try await openReading(7, volumes: 42)
+        // The session went inactive and the coordinator has not been told yet.
+        transport.configure { $0.sendError = .notActivated }
+
+        pick(8, on: viewModel)
+        await settle(viewModel)
+
+        #expect(viewModel.error == nil)
+        #expect(viewModel.errorMessage == nil)
+        #expect(transport.sentUpdates.isEmpty)
+
+        transport.configure { $0.sendError = nil }
+        transport.emit(.activated(isReachable: true))
+
+        let isSent = await WatchPersistenceTestSupport.waitUntil { !self.transport.sentUpdates.isEmpty }
+        #expect(isSent)
+        let entry = try storedEntry()
+        #expect(entry.readingVolume == 8)
+        #expect(transport.sentUpdates == [ReadingUpdate(mangaID: 42, readingVolume: 8, sentAt: entry.updatedAt)])
+    }
+
+    // MARK: - Adjusting with VoiceOver
+
+    @Test func `Incrementing in the middle of the range moves one volume forward`() async throws {
+        let viewModel = try await openReading(7, volumes: 42)
+
+        viewModel.incrementDraft()
+
+        #expect(viewModel.draft == 8)
+    }
+
+    @Test func `Decrementing in the middle of the range moves one volume back`() async throws {
+        let viewModel = try await openReading(7, volumes: 42)
+
+        viewModel.decrementDraft()
+
+        #expect(viewModel.draft == 6)
+    }
+
+    @Test func `Incrementing never goes past the last volume`() async throws {
+        let viewModel = try await openReading(41, volumes: 42)
+
+        viewModel.incrementDraft()
+        #expect(viewModel.draft == 42)
+
+        viewModel.incrementDraft()
+        #expect(viewModel.draft == 42)
+    }
+
+    @Test func `Decrementing never goes below the first volume`() async throws {
+        let viewModel = try await openReading(2, volumes: 42)
+
+        viewModel.decrementDraft()
+        #expect(viewModel.draft == 1)
+
+        viewModel.decrementDraft()
+        #expect(viewModel.draft == 1)
+    }
+
+    @Test func `Without a known volume count incrementing is only limited by the collection limit`() async throws {
+        let viewModel = try await openReading(299, volumes: nil)
+
+        viewModel.incrementDraft()
+        #expect(viewModel.draft == 300)
+
+        viewModel.incrementDraft()
+        #expect(viewModel.draft == 300)
+    }
+}
+
+/// Records that the coordinator's activation, awaited on another task, has been taken.
+private actor ActivationWait {
+    private(set) var isDone = false
+
+    func markDone() {
+        isDone = true
     }
 }

@@ -10,13 +10,12 @@ import SwiftData
 
 /// The watch app's long-lived pieces, built once: its own store (the iPhone's cannot be reached
 /// from the watch), its only writer and the session with the iPhone. Each screen builds its own
-/// view model from `syncActor` and `transport`.
+/// view model from `syncActor` and `coordinator`.
 @Observable
 @MainActor
 final class WatchDependencies {
     let container: ModelContainer
     let syncActor: MangaSyncActor
-    let transport: any WatchTransport
     let coordinator: WatchSessionCoordinator
 
     init(container: ModelContainer, transport: any WatchTransport) {
@@ -24,7 +23,6 @@ final class WatchDependencies {
         container.mainContext.autosaveEnabled = false
         self.container = container
         syncActor = MangaSyncActor(modelContainer: container)
-        self.transport = transport
         coordinator = WatchSessionCoordinator(transport: transport, syncActor: syncActor)
     }
 

@@ -22,6 +22,8 @@ actor WatchSessionCoordinator {
     /// Applies the events of the session one at a time, for the life of the coordinator.
     private var listening: Task<Void, Never>?
     private var isActivated = false
+    /// Changes chosen while the session could not send them: the latest of each manga, by id.
+    private var heldUpdates: [Int: ReadingUpdate] = [:]
     /// A reading list is being written to the store.
     private var isApplying = false
 
@@ -45,6 +47,25 @@ actor WatchSessionCoordinator {
             }
         }
         transport.activate()
+    }
+
+    /// Sends a volume chosen on the watch to the iPhone. Until the session is activated the
+    /// latest change of each manga is held, without an error, and sent once it is: the watch
+    /// keeps no queue of its own, and a change that never left would stay on the watch alone.
+    func send(_ update: ReadingUpdate) throws(WatchTransportError) {
+        guard isActivated else {
+            hold(update)
+            return
+        }
+        do {
+            try transport.send(update)
+        } catch {
+            // The session went inactive before its event reached this coordinator.
+            guard case .notActivated = error else {
+                throw error
+            }
+            hold(update)
+        }
     }
 
     /// Returns once the session is active and everything the iPhone sent in the background has
@@ -72,6 +93,7 @@ actor WatchSessionCoordinator {
         switch event {
         case .activated:
             isActivated = true
+            sendHeldUpdates()
         case .deactivated:
             isActivated = false
         case .readingSnapshot(let snapshot):
@@ -85,6 +107,25 @@ actor WatchSessionCoordinator {
             }
         case .reachabilityChanged, .readingUpdate:
             break
+        }
+    }
+
+    private func hold(_ update: ReadingUpdate) {
+        if let held = heldUpdates[update.mangaID], held.sentAt >= update.sentAt {
+            return
+        }
+        heldUpdates[update.mangaID] = update
+    }
+
+    private func sendHeldUpdates() {
+        let updates = heldUpdates.values
+        heldUpdates = [:]
+        for update in updates {
+            do {
+                try send(update)
+            } catch {
+                // The session cannot carry this change at all; sending it again would fail alike.
+            }
         }
     }
 }

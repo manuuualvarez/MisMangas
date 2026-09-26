@@ -41,9 +41,6 @@ struct RootView: View {
         .task {
             await session.restoreSession()
         }
-        .task {
-            await dependencies.watchSync?.start()
-        }
         .task(id: session.isWelcomeRequired) {
             // Signing out empties the watch's list; choosing a guest or signing in fills it again.
             await dependencies.watchSync?.publishSnapshot()
