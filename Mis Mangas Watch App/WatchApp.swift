@@ -19,7 +19,7 @@ struct WatchApp: App {
         WindowGroup {
             switch startup {
             case let .success(dependencies):
-                ContentUnavailableView("Mis Mangas", systemImage: "books.vertical")
+                WatchRootView()
                     .modelContainer(dependencies.container)
                     .environment(dependencies)
                     .task {

@@ -109,7 +109,6 @@ final class WatchSessionCoordinatorTests {
         // The date of arrival on the watch, not the date the iPhone generated the list.
         let stored = try #require(storedSnapshotDate)
         #expect(stored >= beforeArrival && stored <= afterArrival)
-        #expect(await coordinator.lastSnapshotAt == stored)
     }
 
     @Test func `A later reading list without a manga deletes it from the store`() async throws {

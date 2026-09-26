@@ -32,11 +32,6 @@ actor WatchSessionCoordinator {
         defaults = defaultsSuiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
     }
 
-    /// When the last reading list arrived; `nil` until the first one.
-    var lastSnapshotAt: Date? {
-        defaults.object(forKey: Self.lastSnapshotKey) as? Date
-    }
-
     /// Activates the session and starts applying what arrives; later calls change nothing.
     func start() {
         guard listening == nil else {
