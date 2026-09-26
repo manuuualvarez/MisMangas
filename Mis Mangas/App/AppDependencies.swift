@@ -32,6 +32,8 @@ final class AppDependencies {
     let session: SessionViewModel
     /// Keeps the watch's reading list current; `nil` on a device that cannot pair a watch.
     let watchSync: WatchSyncService?
+    /// Keeps the reading widget's covers and timeline current.
+    let readingWidget: ReadingWidgetService
     /// Whether the coordinator runs the signed-in service.
     private(set) var isSessionActive = false
     /// The service for a session: signed in to an account, it reaches the user's collection on the server
@@ -80,6 +82,12 @@ final class AppDependencies {
                 sessionState: { [session] in (account: session.account, isSignedOut: session.isWelcomeRequired) }
             )
             : nil
+        readingWidget = ReadingWidgetService(
+            syncActor: syncActor,
+            syncCoordinator: syncCoordinator,
+            // Without the shared folder the widget still reloads, without covers.
+            coverCache: CoverCacheFiles.appGroup.map { CoverCacheService(files: $0) }
+        )
     }
 
     /// Follows a change of session: the coordinator stops the passes of the previous one and

@@ -55,6 +55,15 @@ actor MangaSyncActor {
         }
     }
 
+    /// Whether the store holds the manga `id`, whatever brought it there.
+    func hasManga(id: Int) throws(PersistenceError) -> Bool {
+        try run {
+            var descriptor = FetchDescriptor<Manga>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            return try modelContext.fetchCount(descriptor) > 0
+        }
+    }
+
     // MARK: - Purges
 
     /// Deletes index rows fetched before `now - olderThan`. Returns how many were removed.

@@ -24,7 +24,6 @@ extension SharedMockSuites {
         private let actor: MangaSyncActor
         private let container: ModelContainer
         private let security: FakeSecurity
-        private let changes: CallCounter
         private let service: MangaSyncService
 
         init() throws {
@@ -34,22 +33,17 @@ extension SharedMockSuites {
             container = made.container
             let security = FakeSecurity(token: Self.token, email: SessionTestTokenFactory.email)
             self.security = security
-            let changes = CallCounter()
-            self.changes = changes
             service = Self.makeService(
                 actor: made.actor,
                 collectionRepository: DefaultCollectionRepositoryTest(security: security),
                 account: CollectionTestSupport.account
-            ) {
-                changes.increment()
-            }
+            )
         }
 
         private static func makeService(
             actor: MangaSyncActor,
             collectionRepository: (any CollectionRepository)?,
-            account: String?,
-            onCollectionChanged: (@Sendable () -> Void)? = nil
+            account: String?
         ) -> MangaSyncService {
             let mangaRepository = DefaultMangaRepositoryTest()
             return MangaSyncService(
@@ -57,8 +51,7 @@ extension SharedMockSuites {
                 mangaRepository: mangaRepository,
                 taxonomyCache: TaxonomyCacheActor(mangaRepository: mangaRepository),
                 collectionRepository: collectionRepository,
-                account: account,
-                onCollectionChanged: onCollectionChanged
+                account: account
             )
         }
 
@@ -197,7 +190,6 @@ extension SharedMockSuites {
 
             #expect(result.applied == 1)
             #expect(CollectionMockScenario.hits(.collectionList) == 0)
-            #expect(changes.value == 0)
             #expect(CollectionMockScenario.hits(.collectionUpsert) == 2)
             let remaining = try operations()
             #expect(remaining.map(\.mangaID) == [2, 3])
@@ -303,18 +295,6 @@ extension SharedMockSuites {
         }
 
         // MARK: - Pass bookkeeping
-
-        @Test func `onCollectionChanged is called once per pass`() async throws {
-            try await queueUpserts([1, 2])
-            CollectionMockScenario.set(.collectionUpsert, .status(201))
-            CollectionMockScenario.set(.collectionList, .fixture("collection_response.json"))
-
-            _ = try await service.synchronizeCollection()
-            #expect(changes.value == 1)
-
-            _ = try await service.synchronizeCollection()
-            #expect(changes.value == 2)
-        }
 
         @Test func `A guest pass returns an empty result without network and keeps the queue`() async throws {
             try await queueUpserts([1])

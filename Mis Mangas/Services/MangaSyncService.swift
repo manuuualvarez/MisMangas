@@ -21,23 +21,19 @@ struct MangaSyncService {
     let collectionRepository: (any CollectionRepository)?
     /// The account whose queue the signed-in passes send; `nil` for a guest.
     let account: String?
-    /// Called once at the end of every synchronization pass that reaches the server snapshot.
-    let onCollectionChanged: (@Sendable () -> Void)?
 
     init(
         syncActor: MangaSyncActor,
         mangaRepository: any MangaRepository,
         taxonomyCache: TaxonomyCacheActor,
         collectionRepository: (any CollectionRepository)? = nil,
-        account: String? = nil,
-        onCollectionChanged: (@Sendable () -> Void)? = nil
+        account: String? = nil
     ) {
         self.syncActor = syncActor
         self.mangaRepository = mangaRepository
         self.taxonomyCache = taxonomyCache
         self.collectionRepository = collectionRepository
         self.account = account
-        self.onCollectionChanged = onCollectionChanged
     }
 
     /// Retention of index rows and unreferenced detail records.
@@ -104,6 +100,11 @@ struct MangaSyncService {
     @discardableResult
     func cacheDetail(_ dto: MangaDTO) async throws(PersistenceError) -> Int {
         try await syncActor.cacheDetail(dto)
+    }
+
+    /// Whether the store holds the manga `id`.
+    func hasManga(id: Int) async throws(PersistenceError) -> Bool {
+        try await syncActor.hasManga(id: id)
     }
 
     /// Asks the server for the full record of `mangaID` and stores it. Store failures surface as
@@ -198,7 +199,6 @@ struct MangaSyncService {
         let snapshot = try await persistence { () throws(PersistenceError) in
             try await syncActor.applyRemoteSnapshot(remote)
         }
-        onCollectionChanged?()
         return SyncResult(applied: applied, blocked: blocked, rejected: rejected, upserted: snapshot.upserted, removed: snapshot.removed)
     }
 

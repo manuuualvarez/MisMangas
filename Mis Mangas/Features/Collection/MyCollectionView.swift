@@ -14,12 +14,16 @@ import SwiftUI
 /// column on iPad and is pushed on iPhone. An empty collection offers a way to the catalog, and
 /// a chip in the detail applies its category there. With a session, the list syncs with a pull or
 /// the toolbar's sync button (which counts the pending changes), stays current whenever a pass
-/// ends, and says in an alert when the server refused changes or the device could not sync.
+/// ends, and says in an alert when the server refused changes or the device could not sync. A link
+/// to a manga selects it, brought from the server first when the device does not hold it, saying it
+/// is opening meanwhile.
 struct MyCollectionView: View {
     @Query(filter: #Predicate<Manga> { $0.inCollection == true }, sort: \Manga.title)
     private var mangas: [Manga]
+    @Environment(\.modelContext) private var modelContext
     @Binding var selectedTab: AppTab
     @Binding var pendingCatalogMode: CatalogMode?
+    @Binding var pendingMangaID: Int?
     @State private var viewModel: CollectionViewModel
     @State private var filter: CollectionFilter
     @State private var sort = CollectionSort.title
@@ -35,10 +39,12 @@ struct MyCollectionView: View {
         dependencies: AppDependencies,
         selectedTab: Binding<AppTab>,
         pendingCatalogMode: Binding<CatalogMode?>,
+        pendingMangaID: Binding<Int?>,
         filter: CollectionFilter = .all
     ) {
         _selectedTab = selectedTab
         _pendingCatalogMode = pendingCatalogMode
+        _pendingMangaID = pendingMangaID
         _viewModel = State(initialValue: dependencies.makeCollectionViewModel(presentsRejections: true))
         _filter = State(initialValue: filter)
     }
@@ -176,6 +182,55 @@ struct MyCollectionView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        // On the split view and not the list: a link can arrive while the pushed detail hides the list.
+        .alert(
+            "Couldn't open manga",
+            isPresented: $viewModel.isDeepLinkErrorPresented,
+            presenting: viewModel.deepLinkError
+        ) { _ in
+            Button("OK") {}
+        } message: { error in
+            Text(error.localizedDescription)
+        }
+        .overlay {
+            if viewModel.isOpeningDeepLink {
+                ProgressView("Opening…")
+                    // The default secondary label measured 4.2:1 over the material.
+                    .foregroundStyle(.primary)
+                    .padding()
+                    .background(.regularMaterial, in: .rect(cornerRadius: 12))
+            }
+        }
+        // The overlay takes no focus: say that the wait began.
+        .onChange(of: viewModel.isOpeningDeepLink) { _, isOpening in
+            if isOpening {
+                AccessibilityNotification.Announcement(String(localized: "Opening…")).post()
+            }
+        }
+        .task(id: pendingMangaID) {
+            guard let mangaID = pendingMangaID else {
+                return
+            }
+            let isReady = await viewModel.prepareDeepLinkedManga(id: mangaID)
+            // A newer link replaced this one, or the tab went away: the link still waits.
+            guard !Task.isCancelled else {
+                return
+            }
+            if isReady {
+                var descriptor = FetchDescriptor<Manga>(predicate: #Predicate { $0.id == mangaID })
+                descriptor.fetchLimit = 1
+                // Unreadable right after being stored: the selection stays as it was.
+                if let manga = try? modelContext.fetch(descriptor).first {
+                    selectedManga = manga
+                    // Where the detail fills a column, focus stays on the list: say what opened.
+                    // Low priority is queued behind the speech in progress instead of interrupting it.
+                    var announcement = AttributedString(localized: "Opened \(manga.title)")
+                    announcement.accessibilitySpeechAnnouncementPriority = .low
+                    AccessibilityNotification.Announcement(announcement).post()
+                }
+            }
+            pendingMangaID = nil
+        }
         .environment(
             \.applyCatalogMode,
             CollectionModeApplier(
@@ -205,19 +260,36 @@ struct MyCollectionView: View {
     @Previewable @Environment(AppDependencies.self) var dependencies
     @Previewable @State var selectedTab = AppTab.collection
     @Previewable @State var pendingMode: CatalogMode?
-    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode)
+    @Previewable @State var pendingMangaID: Int?
+    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode, pendingMangaID: $pendingMangaID)
 }
 
 #Preview("Reading", traits: .sampleData) {
     @Previewable @Environment(AppDependencies.self) var dependencies
     @Previewable @State var selectedTab = AppTab.collection
     @Previewable @State var pendingMode: CatalogMode?
-    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode, filter: .reading)
+    @Previewable @State var pendingMangaID: Int?
+    MyCollectionView(
+        dependencies: dependencies,
+        selectedTab: $selectedTab,
+        pendingCatalogMode: $pendingMode,
+        pendingMangaID: $pendingMangaID,
+        filter: .reading
+    )
 }
 
 #Preview("Empty", traits: .emptyStore()) {
     @Previewable @Environment(AppDependencies.self) var dependencies
     @Previewable @State var selectedTab = AppTab.collection
     @Previewable @State var pendingMode: CatalogMode?
-    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode)
+    @Previewable @State var pendingMangaID: Int?
+    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode, pendingMangaID: $pendingMangaID)
+}
+
+#Preview("Link", traits: .sampleData) {
+    @Previewable @Environment(AppDependencies.self) var dependencies
+    @Previewable @State var selectedTab = AppTab.collection
+    @Previewable @State var pendingMode: CatalogMode?
+    @Previewable @State var pendingMangaID = SampleData.collection.first?.manga.id
+    MyCollectionView(dependencies: dependencies, selectedTab: $selectedTab, pendingCatalogMode: $pendingMode, pendingMangaID: $pendingMangaID)
 }

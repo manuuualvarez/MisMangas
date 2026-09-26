@@ -39,8 +39,13 @@ actor SyncCoordinator {
     /// iterating. Nothing is kept for later subscribers: whoever must hear about a pass subscribes
     /// before asking for it (the root view does before it hands over a session), and a screen
     /// reads everything when it appears.
-    func events() -> AsyncStream<SyncEvent> {
-        let (stream, continuation) = AsyncStream.makeStream(of: SyncEvent.self)
+    ///
+    /// `bufferingPolicy` decides what waits while the subscriber is busy: every event by default,
+    /// or only the newest for a listener that just needs to know that something changed.
+    func events(
+        bufferingPolicy: AsyncStream<SyncEvent>.Continuation.BufferingPolicy = .unbounded
+    ) -> AsyncStream<SyncEvent> {
+        let (stream, continuation) = AsyncStream.makeStream(of: SyncEvent.self, bufferingPolicy: bufferingPolicy)
         let id = UUID()
         subscribers[id] = continuation
         continuation.onTermination = { [weak self] _ in
