@@ -8,6 +8,7 @@
 import Foundation
 import Observation
 import SwiftData
+import WatchConnectivity
 
 /// The app's long-lived services, built once and handed to the view tree through the
 /// environment (`@Environment(AppDependencies.self)`). Only the session of the sync coordinator
@@ -29,6 +30,8 @@ final class AppDependencies {
     /// signed-in service while there is a session.
     let syncCoordinator: SyncCoordinator
     let session: SessionViewModel
+    /// Keeps the watch's reading list current; `nil` on a device that cannot pair a watch.
+    let watchSync: WatchSyncService?
     /// Whether the coordinator runs the signed-in service.
     private(set) var isSessionActive = false
     /// The service for a session: signed in to an account, it reaches the user's collection on the server
@@ -69,6 +72,14 @@ final class AppDependencies {
             defaults: defaults,
             makeSyncService: makeSyncService
         )
+        watchSync = WCSession.isSupported()
+            ? WatchSyncService(
+                transport: WatchSessionBridge(),
+                syncActor: syncActor,
+                syncCoordinator: syncCoordinator,
+                sessionState: { [session] in (account: session.account, isSignedOut: session.isWelcomeRequired) }
+            )
+            : nil
     }
 
     /// Follows a change of session: the coordinator stops the passes of the previous one and

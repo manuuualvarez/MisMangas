@@ -14,7 +14,7 @@ import SwiftUI
 /// the launch has decided, and on every change of account, the sync coordinator moves to the
 /// service of that account and the maintenance runs, with a first pass when signed in; back in the
 /// foreground, a signed-in app syncs again. A pass that finds the session rejected by the server,
-/// whoever asked for it, ends the session here.
+/// whoever asked for it, ends the session here. The watch's reading list follows the session.
 struct RootView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(SessionViewModel.self) private var session
@@ -40,6 +40,10 @@ struct RootView: View {
         }
         .task {
             await session.restoreSession()
+        }
+        .task(id: session.isWelcomeRequired) {
+            // Signing out empties the watch's list; choosing a guest or signing in fills it again.
+            await dependencies.watchSync?.publishSnapshot()
         }
         .task(id: settledAccount) {
             guard case .some(let account) = settledAccount else { return }

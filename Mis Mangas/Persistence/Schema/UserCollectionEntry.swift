@@ -28,6 +28,12 @@ final class UserCollectionEntry {
     /// launch.
     static let volumeLimit = 300
 
+    /// The volumes a reader can be on for a manga with `volumes` published: from the first to
+    /// the last, or up to `volumeLimit` while the count is unknown (or larger than the limit).
+    static func readingVolumeRange(volumes: Int?) -> ClosedRange<Int> {
+        1 ... max(min(volumes ?? volumeLimit, volumeLimit), 1)
+    }
+
     init(
         id: UUID = UUID(),
         mangaID: Int,

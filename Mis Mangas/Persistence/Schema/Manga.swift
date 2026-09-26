@@ -145,6 +145,33 @@ extension Manga {
         return attributed
     }
 
+    /// Whether the manga is being read: it has a reading volume and the collection is not marked
+    /// complete. The last volume still counts as being read.
+    var isReading: Bool {
+        guard let entry = collectionEntry else {
+            return false
+        }
+        return entry.readingVolume != nil && !entry.completeCollection
+    }
+
+    /// How far a reader on `volume` has got, as a control shows it: "Vol. 7 of 42", or "Vol. 7"
+    /// while the volume count is unknown.
+    func readingVolumeText(_ volume: Int) -> String {
+        guard let volumes else {
+            return String(localized: "Vol. \(volume)")
+        }
+        return String(localized: "Vol. \(volume) of \(volumes)")
+    }
+
+    /// How far a reader on `volume` has got, for VoiceOver to read as a control's value after its
+    /// label ("Reading volume"): "7 of 42", or "7" while the volume count is unknown.
+    func readingVolumeAccessibilityValue(_ volume: Int) -> String {
+        guard let volumes else {
+            return String(volume)
+        }
+        return String(localized: "\(volume) of \(volumes)")
+    }
+
     /// Whether anyone has rated the manga. The server sends 0 for an unrated one: an average of
     /// user votes from 1 to 10 can never be 0, so 0 is the absence of a score, not a grade.
     var isScored: Bool {

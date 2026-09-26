@@ -35,8 +35,17 @@ struct MisMangasApp: App {
     }
 
     private static func start() -> Result<AppDependencies, PersistenceError> {
-        Result { () throws(PersistenceError) in
+        let startup = Result { () throws(PersistenceError) in
             try AppDependencies.live()
         }
+        if case let .success(dependencies) = startup, let watchSync = dependencies.watchSync {
+            // The watch session starts with the app, not with a screen: a message from the watch
+            // can launch the app in the background without connecting any scene. `start()` only
+            // launches the listening task and returns.
+            Task {
+                await watchSync.start()
+            }
+        }
+        return startup
     }
 }

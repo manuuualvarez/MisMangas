@@ -384,6 +384,43 @@ struct MappingTests {
         #expect(manga.collectionProgressAccessibilityLabel == nil)
     }
 
+    // MARK: - Reading volume range
+
+    @Test(arguments: [
+        (42 as Int?, 1 ... 42),
+        (nil, 1 ... 300),
+        (500, 1 ... 300),
+        (1, 1 ... 1),
+        (0, 1 ... 1),
+    ])
+    func `The reading volume goes from 1 to the last volume, capped at the collection limit`(
+        volumes: Int?, expected: ClosedRange<Int>
+    ) {
+        #expect(UserCollectionEntry.readingVolumeRange(volumes: volumes) == expected)
+    }
+
+    @Test(arguments: [
+        (42 as Int?, "Vol. 7 of 42"),
+        (nil, "Vol. 7"),
+    ])
+    func `readingVolumeText abbreviates the volume and adds the count when it is known`(volumes: Int?, expected: String) throws {
+        let manga = try JSONDecoder.app.decode(MangaDTO.self, from: Self.mangaJSON()).makeManga()
+        manga.volumes = volumes
+
+        #expect(manga.readingVolumeText(7) == expected)
+    }
+
+    @Test(arguments: [
+        (42 as Int?, "7 of 42"),
+        (nil, "7"),
+    ])
+    func `readingVolumeAccessibilityValue says the volume and the count when it is known`(volumes: Int?, expected: String) throws {
+        let manga = try JSONDecoder.app.decode(MangaDTO.self, from: Self.mangaJSON()).makeManga()
+        manga.volumes = volumes
+
+        #expect(manga.readingVolumeAccessibilityValue(7) == expected)
+    }
+
     // MARK: - Inline fixture (shape from the backend OpenAPI)
 
     private static func mangaJSON(
