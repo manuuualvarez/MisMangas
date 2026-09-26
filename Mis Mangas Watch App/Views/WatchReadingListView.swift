@@ -16,12 +16,18 @@ struct WatchReadingListView: View {
         sort: [SortDescriptor(\Manga.updatedAt, order: .reverse)]
     )
     private var mangas: [Manga]
+    @Environment(WatchDependencies.self) private var dependencies
 
     var body: some View {
         // Filtered in memory: the watch keeps 50 mangas at most.
         let readingMangas = mangas.filter(\.isReading)
         List(readingMangas) { manga in
-            WatchMangaRowView(manga: manga)
+            NavigationLink(value: manga) {
+                WatchMangaRowView(manga: manga)
+            }
+        }
+        .navigationDestination(for: Manga.self) { manga in
+            WatchMangaDetailView(manga: manga, dependencies: dependencies)
         }
         .overlay {
             if readingMangas.isEmpty {

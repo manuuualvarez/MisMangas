@@ -108,6 +108,31 @@ struct MangaSyncActorWatchTests {
         #expect(entry.updatedAt == Self.t1)
     }
 
+    @Test func `A snapshot older than the watch's own change keeps the watch's volume and refreshes the rest`() async throws {
+        // The watch moved to volume 9 at t2; the iPhone's list still carries volume 7 from t1.
+        try WatchPersistenceTestSupport.insertManga(
+            id: 42,
+            title: "Doragon Bōru",
+            volumes: 40,
+            coverURL: nil,
+            updatedAt: Self.t2,
+            entry: .init(readingVolume: 9, updatedAt: Self.t2),
+            in: container
+        )
+
+        try await actor.applyReadingSnapshot(ReadingSnapshot(generatedAt: Self.t2, items: [Self.dragonBall]))
+
+        let context = WatchPersistenceTestSupport.freshContext(container)
+        let manga = try #require(try WatchPersistenceTestSupport.manga(id: 42, in: context))
+        #expect(manga.title == "Dragon Ball")
+        #expect(manga.mainPictureURL == Self.dragonBallCover)
+        #expect(manga.volumes == 42)
+        #expect(manga.updatedAt == Self.t2)
+        let entry = try #require(manga.collectionEntry)
+        #expect(entry.readingVolume == 9)
+        #expect(entry.updatedAt == Self.t2)
+    }
+
     @Test func `A snapshot deletes the mangas it no longer lists together with their entries`() async throws {
         try WatchPersistenceTestSupport.insertManga(
             id: 42, volumes: 42, updatedAt: Self.t0, entry: .init(readingVolume: 7, updatedAt: Self.t0), in: container

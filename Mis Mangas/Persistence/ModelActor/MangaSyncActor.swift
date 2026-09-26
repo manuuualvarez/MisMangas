@@ -397,7 +397,8 @@ actor MangaSyncActor {
 
     #if os(watchOS)
     /// Makes the watch's store match the reading list the iPhone published, in one transaction:
-    /// every item is created or updated, and every manga the list no longer has is deleted.
+    /// every item is created or updated, and every manga the list no longer has is deleted. An
+    /// entry the watch changed after the item's date keeps its volume; the rest is refreshed.
     func applyReadingSnapshot(_ snapshot: ReadingSnapshot) throws(PersistenceError) {
         try run {
             let listed = Set(snapshot.items.map(\.mangaID))
@@ -419,7 +420,6 @@ actor MangaSyncActor {
                 manga.mainPictureURL = item.coverURL
                 manga.volumes = item.volumes
                 manga.inCollection = true
-                manga.updatedAt = item.updatedAt
                 let entry: UserCollectionEntry
                 if let stored = try fetchOne(#Predicate<UserCollectionEntry> { $0.mangaID == mangaID }) {
                     entry = stored
@@ -427,10 +427,16 @@ actor MangaSyncActor {
                     entry = UserCollectionEntry(mangaID: mangaID, createdAt: item.updatedAt, updatedAt: item.updatedAt)
                     modelContext.insert(entry)
                 }
+                entry.manga = manga
+                // A list the iPhone published before it received the watch's latest change would
+                // undo it: the watch's own later change stays until a list that includes it comes.
+                guard entry.updatedAt <= item.updatedAt else {
+                    continue
+                }
+                manga.updatedAt = item.updatedAt
                 entry.readingVolume = item.readingVolume
                 entry.completeCollection = item.completeCollection
                 entry.updatedAt = item.updatedAt
-                entry.manga = manga
             }
             try save()
         }
