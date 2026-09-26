@@ -145,6 +145,15 @@ extension Manga {
         return attributed
     }
 
+    /// Whether the manga is being read: it has a reading volume and the collection is not marked
+    /// complete. The last volume still counts as being read.
+    var isReading: Bool {
+        guard let entry = collectionEntry else {
+            return false
+        }
+        return entry.readingVolume != nil && !entry.completeCollection
+    }
+
     /// Whether anyone has rated the manga. The server sends 0 for an unrated one: an average of
     /// user votes from 1 to 10 can never be 0, so 0 is the absence of a score, not a grade.
     var isScored: Bool {

@@ -6,7 +6,25 @@
 	objectVersion = 110;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		FE13F538306771A700FFA67D /* Mis Mangas Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = FE13F52E306771A600FFA67D /* Mis Mangas Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
+		FE13F536306771A700FFA67D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FEE678D730547D5D0012524F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE13F52D306771A600FFA67D;
+			remoteInfo = "Mis Mangas Watch App Watch App";
+		};
+		FE13FD8830680B9E00FFA67D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FEE678D730547D5D0012524F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE13F52D306771A600FFA67D;
+			remoteInfo = "Mis Mangas Watch App";
+		};
 		FEEBF59F305832D000E59EAF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = FEE678D730547D5D0012524F /* Project object */;
@@ -16,13 +34,100 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		FE13F53C306771A700FFA67D /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolder = Product;
+			files = (
+				FE13F538306771A700FFA67D /* Mis Mangas Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		FE13F52E306771A600FFA67D /* Mis Mangas Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Mis Mangas Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FE13FD8430680B9D00FFA67D /* Mis Mangas Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Mis Mangas Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FEE678DF30547D5D0012524F /* Mis Mangas.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Mis Mangas.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FEEBF55130582F1200E59EAF /* Mis MangasTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Mis MangasTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FEEBF5A13058331500E59EAF /* Mis Mangas.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Mis Mangas.xctestplan"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FE13025330680EE200FFA67D /* Exceptions for "Mis MangasTests" folder in "Mis Mangas Watch AppTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Support/FakeWatchTransport.swift,
+			);
+			target = FE13FD8330680B9D00FFA67D /* Mis Mangas Watch AppTests */;
+		};
+		FE13FD4C3068056900FFA67D /* Exceptions for "Mis Mangas" folder in "Mis Mangas Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Components/ImageLoader/ImageCacheActor.swift,
+				Components/ImageLoader/ImageDownloader.swift,
+				Components/ImageLoader/RemoteImageView.swift,
+				Components/MangaCardView/MangaCoverView.swift,
+				Domain/DTOs/AuthorDTO.swift,
+				Domain/DTOs/AuthorIdsRequest.swift,
+				Domain/DTOs/CustomSearch.swift,
+				Domain/DTOs/DemographicDTO.swift,
+				Domain/DTOs/GenreDTO.swift,
+				Domain/DTOs/MangaDTO.swift,
+				Domain/DTOs/PageDTO.swift,
+				Domain/DTOs/PageMetadataDTO.swift,
+				Domain/DTOs/ServerErrorDTO.swift,
+				Domain/DTOs/ThemeDTO.swift,
+				Domain/DTOs/UserMangaCollectionDTO.swift,
+				Domain/DTOs/UserMangaCollectionRequest.swift,
+				Domain/DTOs/UserResponse.swift,
+				Domain/DTOs/UsersCreate.swift,
+				Domain/Enums/AuthorRole.swift,
+				Domain/Enums/Demographic.swift,
+				Domain/Enums/Genre.swift,
+				Domain/Enums/MangaStatus.swift,
+				Domain/Enums/Theme.swift,
+				Domain/Errors/APIError.swift,
+				Domain/Errors/AuthError.swift,
+				Domain/Errors/PersistenceError.swift,
+				Domain/Errors/SyncError.swift,
+				"Domain/JSON/JSONDecoder+App.swift",
+				"Domain/JSON/JSONEncoder+App.swift",
+				"Domain/Mapping/AuthorDTO+Display.swift",
+				"Domain/Mapping/AuthorDTO+Model.swift",
+				"Domain/Mapping/MangaDTO+Model.swift",
+				"Domain/Mapping/UserCollectionEntry+Request.swift",
+				Networking/APIActor.swift,
+				"Networking/Interface/URLSession+Data.swift",
+				Networking/NetworkInteractor.swift,
+				Persistence/ModelActor/CollectionEntrySnapshot.swift,
+				Persistence/ModelActor/MangaSyncActor.swift,
+				Persistence/ModelActor/PendingOperationSnapshot.swift,
+				Persistence/ModelActor/PersistenceController.swift,
+				Persistence/Schema/Author.swift,
+				Persistence/Schema/CatalogEntry.swift,
+				Persistence/Schema/Manga.swift,
+				Persistence/Schema/MangaMigrationPlan.swift,
+				Persistence/Schema/MangaSchemaV1.swift,
+				Persistence/Schema/PendingOperation.swift,
+				Persistence/Schema/PendingOperationType.swift,
+				Persistence/Schema/UserCollectionEntry.swift,
+				Preview/SampleData.swift,
+				Resources/Colors.xcassets,
+				Resources/Localizable.xcstrings,
+				Services/CatalogMode.swift,
+				WatchConnectivity/Payloads/ReadingItem.swift,
+				WatchConnectivity/Payloads/ReadingSnapshot.swift,
+				WatchConnectivity/Payloads/ReadingUpdate.swift,
+				WatchConnectivity/WatchPayload.swift,
+				WatchConnectivity/WatchSessionBridge.swift,
+				WatchConnectivity/WatchSessionEvent.swift,
+				WatchConnectivity/WatchTransport.swift,
+				WatchConnectivity/WatchTransportError.swift,
+			);
+			target = FE13F52D306771A600FFA67D /* Mis Mangas Watch App */;
+		};
 		FEEBF74C3058490100E59EAF /* Exceptions for "Mis Mangas" folder in "Mis Mangas" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -35,22 +140,46 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		FE13F52F306771A600FFA67D /* Mis Mangas Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Mis Mangas Watch App";
+			sourceTree = "<group>";
+		};
+		FE13FD8530680B9E00FFA67D /* Mis Mangas Watch AppTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Mis Mangas Watch AppTests";
+			sourceTree = "<group>";
+		};
 		FEE678E130547D5D0012524F /* Mis Mangas */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				FEEBF74C3058490100E59EAF /* Exceptions for "Mis Mangas" folder in "Mis Mangas" target */,
+				FE13FD4C3068056900FFA67D /* Exceptions for "Mis Mangas" folder in "Mis Mangas Watch App" target */,
 			);
 			path = "Mis Mangas";
 			sourceTree = "<group>";
 		};
 		FEEBF55230582F1200E59EAF /* Mis MangasTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FE13025330680EE200FFA67D /* Exceptions for "Mis MangasTests" folder in "Mis Mangas Watch AppTests" target */,
+			);
 			path = "Mis MangasTests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		FE13F52B306771A600FFA67D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		FE13FD8130680B9D00FFA67D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 		FEE678DC30547D5D0012524F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
@@ -70,6 +199,8 @@
 				FEEBF5A13058331500E59EAF /* Mis Mangas.xctestplan */,
 				FEE678E130547D5D0012524F /* Mis Mangas */,
 				FEEBF55230582F1200E59EAF /* Mis MangasTests */,
+				FE13F52F306771A600FFA67D /* Mis Mangas Watch App */,
+				FE13FD8530680B9E00FFA67D /* Mis Mangas Watch AppTests */,
 				FEE678E030547D5D0012524F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -79,6 +210,8 @@
 			children = (
 				FEE678DF30547D5D0012524F /* Mis Mangas.app */,
 				FEEBF55130582F1200E59EAF /* Mis MangasTests.xctest */,
+				FE13F52E306771A600FFA67D /* Mis Mangas Watch App.app */,
+				FE13FD8430680B9D00FFA67D /* Mis Mangas Watch AppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -86,6 +219,45 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		FE13F52D306771A600FFA67D /* Mis Mangas Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FE13F539306771A700FFA67D /* Build configuration list for PBXNativeTarget "Mis Mangas Watch App" */;
+			buildPhases = (
+				FE13F52A306771A600FFA67D /* Sources */,
+				FE13F52B306771A600FFA67D /* Frameworks */,
+				FE13F52C306771A600FFA67D /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				FE13F52F306771A600FFA67D /* Mis Mangas Watch App */,
+			);
+			name = "Mis Mangas Watch App";
+			productName = "Mis Mangas Watch App Watch App";
+			productReference = FE13F52E306771A600FFA67D /* Mis Mangas Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		FE13FD8330680B9D00FFA67D /* Mis Mangas Watch AppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FE13FD8A30680B9E00FFA67D /* Build configuration list for PBXNativeTarget "Mis Mangas Watch AppTests" */;
+			buildPhases = (
+				FE13FD8030680B9D00FFA67D /* Sources */,
+				FE13FD8130680B9D00FFA67D /* Frameworks */,
+				FE13FD8230680B9D00FFA67D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FE13FD8930680B9E00FFA67D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				FE13FD8530680B9E00FFA67D /* Mis Mangas Watch AppTests */,
+			);
+			name = "Mis Mangas Watch AppTests";
+			productName = "Mis Mangas Watch AppTests";
+			productReference = FE13FD8430680B9D00FFA67D /* Mis Mangas Watch AppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		FEE678DE30547D5D0012524F /* Mis Mangas */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FEE678EA30547D5D0012524F /* Build configuration list for PBXNativeTarget "Mis Mangas" */;
@@ -93,8 +265,12 @@
 				FEE678DB30547D5D0012524F /* Sources */,
 				FEE678DC30547D5D0012524F /* Frameworks */,
 				FEE678DD30547D5D0012524F /* Resources */,
+				FE13F53C306771A700FFA67D /* Embed Watch Content */,
 			);
 			buildRules = (
+			);
+			dependencies = (
+				FE13F537306771A700FFA67D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				FEE678E130547D5D0012524F /* Mis Mangas */,
@@ -132,9 +308,16 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2700;
+				LastSwiftUpdateCheck = 2710;
 				LastUpgradeCheck = 2720;
 				TargetAttributes = {
+					FE13F52D306771A600FFA67D = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					FE13FD8330680B9D00FFA67D = {
+						CreatedOnToolsVersion = 27.1;
+						TestTargetID = FE13F52D306771A600FFA67D;
+					};
 					FEE678DE30547D5D0012524F = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -161,11 +344,23 @@
 			targets = (
 				FEE678DE30547D5D0012524F /* Mis Mangas */,
 				FEEBF55030582F1200E59EAF /* Mis MangasTests */,
+				FE13F52D306771A600FFA67D /* Mis Mangas Watch App */,
+				FE13FD8330680B9D00FFA67D /* Mis Mangas Watch AppTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		FE13F52C306771A600FFA67D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		FE13FD8230680B9D00FFA67D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 		FEE678DD30547D5D0012524F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
@@ -179,6 +374,16 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		FE13F52A306771A600FFA67D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		FE13FD8030680B9D00FFA67D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 		FEE678DB30547D5D0012524F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
@@ -192,6 +397,16 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		FE13F537306771A700FFA67D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE13F52D306771A600FFA67D /* Mis Mangas Watch App */;
+			targetProxy = FE13F536306771A700FFA67D /* PBXContainerItemProxy */;
+		};
+		FE13FD8930680B9E00FFA67D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE13F52D306771A600FFA67D /* Mis Mangas Watch App */;
+			targetProxy = FE13FD8830680B9E00FFA67D /* PBXContainerItemProxy */;
+		};
 		FEEBF5A0305832D000E59EAF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = FEE678DE30547D5D0012524F /* Mis Mangas */;
@@ -200,6 +415,124 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		FE13F53A306771A700FFA67D /* Debug configuration for PBXNativeTarget "Mis Mangas Watch App" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NT7J23RCPK;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Mis Mangas";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "cloud.manuelalvarez.Mis-Mangas";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "cloud.manuelalvarez.Mis-Mangas.watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		FE13F53B306771A700FFA67D /* Release configuration for PBXNativeTarget "Mis Mangas Watch App" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NT7J23RCPK;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Mis Mangas";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "cloud.manuelalvarez.Mis-Mangas";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "cloud.manuelalvarez.Mis-Mangas.watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		FE13FD8B30680B9E00FFA67D /* Debug configuration for PBXNativeTarget "Mis Mangas Watch AppTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NT7J23RCPK;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "cloud.manuelalvarez.Mis-Mangas-Watch-AppTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Mis Mangas Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Mis Mangas Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		FE13FD8C30680B9E00FFA67D /* Release configuration for PBXNativeTarget "Mis Mangas Watch AppTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NT7J23RCPK;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "cloud.manuelalvarez.Mis-Mangas-Watch-AppTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Mis Mangas Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Mis Mangas Watch App";
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
 		FEE678E830547D5D0012524F /* Debug configuration for PBXProject "Mis Mangas" */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = FEE678E130547D5D0012524F /* Mis Mangas */;
@@ -444,6 +777,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -471,6 +805,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -484,6 +819,22 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		FE13F539306771A700FFA67D /* Build configuration list for PBXNativeTarget "Mis Mangas Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FE13F53A306771A700FFA67D /* Debug configuration for PBXNativeTarget "Mis Mangas Watch App" */,
+				FE13F53B306771A700FFA67D /* Release configuration for PBXNativeTarget "Mis Mangas Watch App" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		FE13FD8A30680B9E00FFA67D /* Build configuration list for PBXNativeTarget "Mis Mangas Watch AppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FE13FD8B30680B9E00FFA67D /* Debug configuration for PBXNativeTarget "Mis Mangas Watch AppTests" */,
+				FE13FD8C30680B9E00FFA67D /* Release configuration for PBXNativeTarget "Mis Mangas Watch AppTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
 		FEE678DA30547D5D0012524F /* Build configuration list for PBXProject "Mis Mangas" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

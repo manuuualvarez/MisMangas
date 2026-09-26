@@ -336,6 +336,134 @@ actor MangaSyncActor {
         }
     }
 
+    // MARK: - Watch reading list
+
+    /// The mangas being read, most recently changed entry first, at most `limit` of them.
+    func readingSnapshot(limit: Int, now: Date = .now) throws(PersistenceError) -> ReadingSnapshot {
+        try run {
+            // Ordered by the entry: the catalog also stamps the manga's own date.
+            let entries = try modelContext.fetch(
+                FetchDescriptor<UserCollectionEntry>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+            )
+            let items = entries.lazy
+                .compactMap { entry -> ReadingItem? in
+                    guard let manga = entry.manga, manga.isReading else {
+                        return nil
+                    }
+                    return ReadingItem(
+                        mangaID: manga.id,
+                        title: manga.title,
+                        coverURL: manga.mainPictureURL,
+                        readingVolume: entry.readingVolume,
+                        volumes: manga.volumes,
+                        completeCollection: entry.completeCollection,
+                        updatedAt: entry.updatedAt
+                    )
+                }
+                .prefix(limit)
+            return ReadingSnapshot(generatedAt: now, items: Array(items))
+        }
+    }
+
+    /// Applies a reading volume chosen on the watch, in one transaction, when it was chosen after
+    /// the entry's last change (`sentAt` later than `updatedAt`): the entry takes the volume and
+    /// `sentAt` as its change date, and its upload is queued under `account`. Returns whether it
+    /// applied; a repeated or older change, or a manga outside the collection, changes nothing.
+    func applyReadingUpdate(mangaID: Int, readingVolume: Int, sentAt: Date, account: String?, now: Date = .now) throws(PersistenceError) -> Bool {
+        try run {
+            // Strictly later: the second copy of an update carries the date it already stamped.
+            guard let entry = try fetchOne(#Predicate<UserCollectionEntry> { $0.mangaID == mangaID }),
+                  let manga = entry.manga,
+                  sentAt > entry.updatedAt else {
+                return false
+            }
+            _ = try applyEntry(
+                to: manga,
+                volumesOwned: entry.volumesOwned,
+                readingVolume: readingVolume,
+                completeCollection: entry.completeCollection,
+                now: sentAt
+            )
+            // Stamped with the watch's date even when the volume did not change, so the watch's
+            // updates are ordered by a single clock.
+            entry.updatedAt = sentAt
+            manga.updatedAt = sentAt
+            let payload = try JSONEncoder.app.encode(entry.toRequest())
+            try replacePendingOperation(.upsert, mangaID: mangaID, payload: payload, account: account, now: now)
+            try save()
+            return true
+        }
+    }
+
+    #if os(watchOS)
+    /// Makes the watch's store match the reading list the iPhone published, in one transaction:
+    /// every item is created or updated, and every manga the list no longer has is deleted.
+    func applyReadingSnapshot(_ snapshot: ReadingSnapshot) throws(PersistenceError) {
+        try run {
+            let listed = Set(snapshot.items.map(\.mangaID))
+            // The watch keeps nothing but the reading list: a manga it no longer lists goes, and
+            // its entry with it.
+            for manga in try modelContext.fetch(FetchDescriptor<Manga>()) where !listed.contains(manga.id) {
+                modelContext.delete(manga)
+            }
+            for item in snapshot.items {
+                let mangaID = item.mangaID
+                let manga: Manga
+                if let stored = try fetchOne(#Predicate<Manga> { $0.id == mangaID }) {
+                    manga = stored
+                } else {
+                    manga = Manga(id: mangaID, title: item.title, status: MangaStatus.none.rawValue, score: 0)
+                    modelContext.insert(manga)
+                }
+                manga.title = item.title
+                manga.mainPictureURL = item.coverURL
+                manga.volumes = item.volumes
+                manga.inCollection = true
+                manga.updatedAt = item.updatedAt
+                let entry: UserCollectionEntry
+                if let stored = try fetchOne(#Predicate<UserCollectionEntry> { $0.mangaID == mangaID }) {
+                    entry = stored
+                } else {
+                    entry = UserCollectionEntry(mangaID: mangaID, createdAt: item.updatedAt, updatedAt: item.updatedAt)
+                    modelContext.insert(entry)
+                }
+                entry.readingVolume = item.readingVolume
+                entry.completeCollection = item.completeCollection
+                entry.updatedAt = item.updatedAt
+                entry.manga = manga
+            }
+            try save()
+        }
+    }
+
+    /// Changes the reading volume on the watch, without queueing anything: the watch has no
+    /// server. Returns the change date, which travels as the update's `sentAt`.
+    func applyLocalReadingVolume(mangaID: Int, readingVolume: Int, now: Date = .now) throws(PersistenceError) -> Date {
+        let isStored = try run {
+            guard let entry = try fetchOne(#Predicate<UserCollectionEntry> { $0.mangaID == mangaID }),
+                  let manga = entry.manga else {
+                return false
+            }
+            _ = try applyEntry(
+                to: manga,
+                volumesOwned: entry.volumesOwned,
+                readingVolume: readingVolume,
+                completeCollection: entry.completeCollection,
+                now: now
+            )
+            // Stamped even when the volume did not change: the date travels as the change's own.
+            entry.updatedAt = now
+            manga.updatedAt = now
+            try save()
+            return true
+        }
+        guard isStored else {
+            throw .notFound
+        }
+        return now
+    }
+    #endif
+
     // MARK: - Server snapshot
 
     /// Makes the collection match the server's, in one transaction, except for the mangas with a

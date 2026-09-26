@@ -77,7 +77,12 @@ actor ImageCacheActor {
             guard let image = UIImage(data: data) else {
                 return nil
             }
-            return await image.byPreparingForDisplay() ?? image
+            #if os(watchOS)
+                // Decoding ahead of display is not available on watchOS; the small covers decode when drawn.
+                return image
+            #else
+                return await image.byPreparingForDisplay() ?? image
+            #endif
         } catch {
             return nil
         }
