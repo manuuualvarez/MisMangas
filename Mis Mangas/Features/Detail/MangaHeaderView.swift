@@ -43,6 +43,7 @@ struct MangaHeaderView: View {
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private var publication: Text {

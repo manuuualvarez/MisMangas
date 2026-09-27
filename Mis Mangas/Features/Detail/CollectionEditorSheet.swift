@@ -21,6 +21,7 @@ struct CollectionEditorSheet: View {
     /// The number pad has no key to put it away: the keyboard toolbar offers "Done".
     @FocusState private var isEditingNumber: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(manga: Manga, dependencies: AppDependencies) {
         self.manga = manga
@@ -33,14 +34,20 @@ struct CollectionEditorSheet: View {
             Form {
                 Section {
                     VolumesPickerView(draft: draft, isEditingNumber: $isEditingNumber)
+                        // The form keeps the row's first height: when the text grows with the sheet
+                        // open, the grid gains rows and the last ones fell outside it.
+                        .id(dynamicTypeSize)
                 } header: {
+                    // The system gray of headers and footers falls below 4.5:1 on the grouped background.
                     Text("Volumes owned")
+                        .foregroundStyle(.mmSecondaryLabel)
                 } footer: {
                     if (draft.volumesCount ?? 0) == 0 {
                         Text("How many volumes you own, counted from the first one.")
+                            .foregroundStyle(.mmSecondaryLabel)
                     }
                 }
-                Section("Reading") {
+                Section {
                     if let count = draft.volumesCount, count > 0 {
                         Stepper(value: $draft.readingVolumeSelection, in: 0 ... count) {
                             ReadingVolumeLabel(readingVolume: draft.readingVolume)
@@ -53,12 +60,15 @@ struct CollectionEditorSheet: View {
                         }
                     } else {
                         LabeledContent("Reading volume") {
-                            TextField("Reading volume", value: $draft.readingVolume, format: .number, prompt: Text("Not started"))
+                            TextField("Reading volume", value: $draft.readingVolume, format: .number, prompt: Text("Not started").foregroundStyle(.mmSecondaryLabel))
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.trailing)
                                 .focused($isEditingNumber)
                         }
                     }
+                } header: {
+                    Text("Reading")
+                        .foregroundStyle(.mmSecondaryLabel)
                 }
                 Section {
                     Toggle("Complete collection", isOn: $draft.completeCollection)
@@ -68,6 +78,7 @@ struct CollectionEditorSheet: View {
                     // sheet closes once the change is saved.
                     if !viewModel.isSyncAvailable {
                         Text("Changes are saved on this device. Sign in to sync.")
+                            .foregroundStyle(.mmSecondaryLabel)
                     }
                 }
                 if let error = viewModel.error {
@@ -130,20 +141,24 @@ struct CollectionEditorSheet: View {
             readingVolume: values.readingVolume,
             completeCollection: values.completeCollection
         )
-        finish()
+        finish(announcing: String(localized: "Saved"))
     }
 
     private func remove() async {
         await viewModel.remove(mangaID: manga.id)
-        finish()
+        finish(announcing: String(localized: "\(manga.title) removed from collection"))
     }
 
-    /// Closes the sheet after a write that succeeded. A failure is announced on every attempt,
-    /// even when a retry fails with the same error: the error row appears below the fold.
-    private func finish() {
+    /// Closes the sheet after a write that succeeded, saying so. A failure is announced on every
+    /// attempt, even when a retry fails with the same error: the error row appears below the fold.
+    private func finish(announcing confirmation: String) {
         if let description = viewModel.error?.errorDescription {
             AccessibilityNotification.Announcement(description).post()
         } else {
+            // High priority: the focus moving back from the closing sheet would cut it short.
+            var announcement = AttributedString(confirmation)
+            announcement.accessibilitySpeechAnnouncementPriority = .high
+            AccessibilityNotification.Announcement(announcement).post()
             dismiss()
         }
     }

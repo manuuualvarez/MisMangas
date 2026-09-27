@@ -60,8 +60,11 @@ struct CatalogFiltersView: View {
                         dismiss()
                     }
                     .disabled(!mode.isFiltered)
+                    // The system red falls below 4.5:1 on a light row.
+                    .foregroundStyle(.mmDestructive)
                 } footer: {
                     Text("One category at a time: choosing a genre, theme or demographic sets the other two to Any.")
+                        .foregroundStyle(.mmSecondaryLabel)
                 }
             }
             .navigationTitle("Filters")

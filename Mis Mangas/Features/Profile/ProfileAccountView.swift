@@ -25,11 +25,15 @@ struct ProfileAccountView: View {
     var body: some View {
         @Bindable var session = session
         Form {
-            Section("Account") {
+            Section {
                 LabeledContent("Email") {
                     Text(email)
                         .foregroundStyle(.mmSecondaryLabel)
                 }
+            } header: {
+                // The system gray of headers falls below 4.5:1 on the grouped background.
+                Text("Account")
+                    .foregroundStyle(.mmSecondaryLabel)
             }
             ProfileSyncStatusView(
                 pendingCount: viewModel.pendingCount,

@@ -110,11 +110,6 @@ struct SignUpView: View {
                 AccessibilityNotification.Announcement(message).post()
             }
         }
-        .onChange(of: session.passwordFailureMessage) { _, message in
-            if let message {
-                AccessibilityNotification.Announcement(message).post()
-            }
-        }
     }
 
     private static let missingInput = String(localized: "Enter a valid email and a password, twice")
@@ -144,6 +139,11 @@ struct SignUpView: View {
         }
         Task {
             await session.signUp(email: email, password: password)
+            // Announced after every attempt: a short password refused twice leaves the same
+            // message, and a change observer would stay silent the second time.
+            if let message = session.passwordFailureMessage {
+                AccessibilityNotification.Announcement(message).post()
+            }
             // The tabs replacing this screen would cut a normal announcement short.
             if session.isAuthenticated {
                 var announcement = AttributedString(localized: "Signed in")

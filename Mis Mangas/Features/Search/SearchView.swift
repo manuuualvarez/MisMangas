@@ -23,6 +23,7 @@ struct SearchView: View {
     @State private var isPresentingAdvancedSearch = false
     @AppStorage("catalog.displayMode") private var displayMode: DisplayMode = .grid
     @Namespace private var heroNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(syncService: MangaSyncService) {
         _viewModel = State(initialValue: CatalogViewModel(syncService: syncService))
@@ -136,7 +137,12 @@ struct SearchView: View {
             // the second column, and collapsed the split view pushes it on its own.
             if let selectedManga {
                 MangaDetailView(manga: selectedManga)
-                    .navigationTransition(.zoom(sourceID: selectedManga.id, in: heroNamespace))
+                    // With Reduce Motion the detail fades in instead of growing out of its cover.
+                    .navigationTransition(
+                        reduceMotion
+                            ? AnyNavigationTransition(.crossFade)
+                            : AnyNavigationTransition(.zoom(sourceID: selectedManga.id, in: heroNamespace))
+                    )
             } else {
                 ContentUnavailableView("Select a manga", systemImage: "book.closed")
             }

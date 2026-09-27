@@ -21,6 +21,12 @@ struct VolumeCellButtonStyle: ButtonStyle {
             // A ternary gives the compiler no member to infer against, so the colors are spelled out.
             .foregroundStyle(isSelected ? Color.mmOnAccent : Color.primary)
             .background(isSelected ? Color.mmAccentFill : Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            // The accent fill alone sits close to the unowned fill in dark mode: an owned cell also
+            // carries an outline in the label color, which stands out in every appearance.
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(.primary, lineWidth: isSelected ? 2 : 0)
+            }
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }

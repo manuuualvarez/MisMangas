@@ -18,16 +18,23 @@ struct AdvancedSearchView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Title") {
-                    TextField("Title", text: $viewModel.draftTitle)
+                // Each field keeps a visible label: a placeholder is gone once the field is filled,
+                // and the system one falls far below 4.5:1.
+                Section {
+                    LabeledContent("Title") {
+                        TextField("Title", text: $viewModel.draftTitle, prompt: Text("Any").foregroundStyle(.mmSecondaryLabel))
+                    }
                 }
-                Section("Author") {
-                    // With both fields filled the placeholder is gone from the screen and the
-                    // section header alone does not tell a first name from a last one.
-                    TextField("First name", text: $viewModel.draftAuthorFirstName)
-                        .accessibilityLabel("First name")
-                    TextField("Last name", text: $viewModel.draftAuthorLastName)
-                        .accessibilityLabel("Last name")
+                Section {
+                    LabeledContent("First name") {
+                        TextField("First name", text: $viewModel.draftAuthorFirstName, prompt: Text("Any").foregroundStyle(.mmSecondaryLabel))
+                    }
+                    LabeledContent("Last name") {
+                        TextField("Last name", text: $viewModel.draftAuthorLastName, prompt: Text("Any").foregroundStyle(.mmSecondaryLabel))
+                    }
+                } header: {
+                    Text("Author")
+                        .foregroundStyle(.mmSecondaryLabel)
                 }
                 TaxonomySectionView(
                     title: "Genres",
@@ -63,12 +70,15 @@ struct AdvancedSearchView: View {
                     Toggle("Contains", isOn: $viewModel.draftContains)
                 } footer: {
                     Text("On, the texts are searched anywhere in the value; off, only at its beginning.")
+                        .foregroundStyle(.mmSecondaryLabel)
                 }
                 Section {
                     Button("Reset", role: .destructive) {
                         viewModel.resetDraft()
                     }
                     .disabled(viewModel.isDraftEmpty)
+                    // The system red falls below 4.5:1 on a light row.
+                    .foregroundStyle(.mmDestructive)
                 }
             }
             .navigationTitle("Advanced search")

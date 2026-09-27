@@ -20,7 +20,7 @@ struct ProfileSyncStatusView: View {
     let retryBlocked: () -> Void
 
     var body: some View {
-        Section("Sync") {
+        Section {
             LabeledContent("Last sync") {
                 if let lastSyncDate {
                     TimelineView(.periodic(from: .now, by: 60)) { _ in
@@ -58,6 +58,10 @@ struct ProfileSyncStatusView: View {
             }
             .disabled(isSyncing)
             .accessibilityValue(isSyncing ? Text("Syncing") : Text(verbatim: ""))
+        } header: {
+            // The system gray of headers falls below 4.5:1 on the grouped background.
+            Text("Sync")
+                .foregroundStyle(.mmSecondaryLabel)
         }
     }
 }

@@ -30,14 +30,13 @@ struct MultiSelectChipsView: View {
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                         .font(.subheadline)
-                        .accessibilityValue("selected")
+                        .accessibilityAddTraits(.isSelected)
                 } else {
                     Button(option) { selection.insert(option) }
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                         .font(.subheadline)
-                        .accessibilityValue("not selected")
                 }
             }
         }
