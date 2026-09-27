@@ -15,7 +15,8 @@ extension OSSignposter {
 
 /// The intervals the app measures. A name is used at both ends of its interval, so the ends
 /// always match: from launch to the first screen, one catalog page, one detail opening, one
-/// synchronization pass and one widget timeline.
+/// synchronization pass and one widget timeline. The names live next to the signposter that
+/// emits them, since no type of the app owns them and the launch interval spans two files.
 enum SignpostName {
     static let launch: StaticString = "app.launch"
     static let catalogPage: StaticString = "catalog.page"
