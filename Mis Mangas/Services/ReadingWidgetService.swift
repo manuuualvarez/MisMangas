@@ -63,7 +63,7 @@ actor ReadingWidgetService {
             await coverCache?.update(to: snapshot.items)
         } catch {
             // The covers stay as they were; the widget reads the store on its own.
-            Logger.widget.error("Reading list not read for the widget: \(String(describing: error))")
+            Logger.widget.error("Reading list not read for the widget: \(String(describing: error), privacy: .private)")
         }
         reload()
     }

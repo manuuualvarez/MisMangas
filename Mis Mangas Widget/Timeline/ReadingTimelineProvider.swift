@@ -20,7 +20,7 @@ struct ReadingTimelineProvider: TimelineProvider {
         do {
             return try PersistenceController.makeContainer()
         } catch {
-            Logger.widget.error("Store not opened: \(String(describing: error))")
+            Logger.widget.error("Store not opened: \(String(describing: error), privacy: .private)")
             return nil
         }
     }()
@@ -49,7 +49,7 @@ struct ReadingTimelineProvider: TimelineProvider {
                 .fetch(limit: ReadingItemsFetcher.itemLimit)
             return ReadingEntry(date: .now, items: reading.items, totalReading: reading.total)
         } catch {
-            Logger.widget.error("Reading list not read: \(String(describing: error))")
+            Logger.widget.error("Reading list not read: \(String(describing: error), privacy: .private)")
             return .empty
         }
     }

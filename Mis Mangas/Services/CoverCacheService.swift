@@ -34,7 +34,7 @@ actor CoverCacheService {
         do {
             try fileManager.createDirectory(at: files.baseURL, withIntermediateDirectories: true)
         } catch {
-            Logger.widget.error("Covers folder not available: \(error.localizedDescription)")
+            Logger.widget.error("Covers folder not available: \(error.localizedDescription, privacy: .private)")
             return
         }
         removeCovers(except: Set(items.map(\.mangaID)))

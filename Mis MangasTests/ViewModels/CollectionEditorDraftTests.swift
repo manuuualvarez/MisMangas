@@ -72,20 +72,20 @@ struct CollectionEditorDraftTests {
         #expect(draft.volumesOwned.isEmpty)
     }
 
-    @Test func `Toggling complete selects every published volume`() {
+    @Test func `Marking complete selects every published volume`() {
         let draft = CollectionEditorDraft(from: Self.dragonBall(volumes: 42))
 
-        draft.toggleComplete()
+        draft.completeCollection = true
 
         #expect(draft.completeCollection)
         #expect(draft.volumesOwned == Set(1 ... 42))
     }
 
-    @Test func `Toggling complete without a volume count only raises the flag`() {
+    @Test func `Marking complete without a volume count only raises the flag`() {
         let draft = CollectionEditorDraft(from: Self.dragonBall(volumes: nil))
         draft.toggle(volume: 3)
 
-        draft.toggleComplete()
+        draft.completeCollection = true
 
         #expect(draft.completeCollection)
         #expect(draft.volumesOwned == [3])
@@ -93,7 +93,7 @@ struct CollectionEditorDraftTests {
 
     @Test func `Deselecting a volume of a complete collection clears the flag and keeps the other volumes`() {
         let draft = CollectionEditorDraft(from: Self.dragonBall(volumes: 42))
-        draft.toggleComplete()
+        draft.completeCollection = true
 
         draft.toggle(volume: 5)
 
@@ -218,7 +218,7 @@ struct CollectionEditorDraftTests {
     @Test func `Marking complete a manga listed with more than 300 volumes owns volumes 1 through 300`() {
         let draft = CollectionEditorDraft(from: Self.dragonBall(volumes: 100_000))
 
-        draft.toggleComplete()
+        draft.completeCollection = true
 
         #expect(draft.volumesOwned == Set(1 ... 300))
     }

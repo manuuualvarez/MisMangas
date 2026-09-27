@@ -125,7 +125,6 @@
 				Networking/APIActor.swift,
 				"Networking/Interface/URLSession+Data.swift",
 				Networking/NetworkInteractor.swift,
-				Persistence/ModelActor/CollectionEntrySnapshot.swift,
 				Persistence/ModelActor/MangaSyncActor.swift,
 				Persistence/ModelActor/PendingOperationSnapshot.swift,
 				Persistence/ModelActor/PersistenceController.swift,

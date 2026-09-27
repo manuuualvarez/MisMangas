@@ -67,10 +67,6 @@ final class CollectionEditorDraft {
         }
     }
 
-    func toggleComplete() {
-        completeCollection.toggle()
-    }
-
     /// The values to save: volumes ascending, and the reading volume kept within 1…`volumesCount`
     /// when the count is known (the server may have lowered it since the entry was stored). A
     /// free reading volume stays within 1…`UserCollectionEntry.volumeLimit`, and 0 or below

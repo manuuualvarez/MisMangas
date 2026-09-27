@@ -49,18 +49,6 @@ enum APIError: LocalizedError {
         }
     }
 
-    /// 4xx statuses and their semantic counterparts: shown to the user, never retried.
-    var isClientError: Bool {
-        switch self {
-        case .http(let status, _):
-            (400..<500).contains(status)
-        case .unauthorized, .forbidden, .notFound:
-            true
-        default:
-            false
-        }
-    }
-
     /// 5xx statuses and their semantic counterpart.
     var isServerError: Bool {
         switch self {
