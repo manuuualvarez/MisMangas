@@ -16,7 +16,9 @@ struct MangaHeaderView: View {
     var body: some View {
         VStack(spacing: 12) {
             // The title that follows names the manga; the cover's own label would only repeat it.
-            MangaCoverView(manga: manga, size: .large)
+            // Pushed as the detail of a split view, this screen can be told it disappeared right
+            // after it appeared while it stays on screen; its cover then asks once more.
+            MangaCoverView(manga: manga, size: .large, retriesWhenCutShort: true)
                 .accessibilityHidden(true)
             VStack(spacing: 4) {
                 Text(manga.title)

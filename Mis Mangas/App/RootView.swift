@@ -5,6 +5,7 @@
 //  Created by Manuel Alvarez on 14/09/2026.
 //
 
+import OSLog
 import SwiftUI
 
 /// Root of the app's view tree. At launch it waits, without showing any screen, until the
@@ -50,6 +51,9 @@ struct RootView: View {
         }
         .task {
             await session.restoreSession()
+            // The launch interval, opened when the app started, ends once the app knows which
+            // screen to show: the next frame is the first useful one.
+            OSSignposter.app.endInterval(SignpostName.launch, .beginState(id: .exclusive))
         }
         .task(id: session.isWelcomeRequired) {
             // Signing out empties the watch's list; choosing a guest or signing in fills it again.

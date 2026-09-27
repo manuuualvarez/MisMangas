@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// The one place where the network repositories meet the store: pulls catalog pages and hands
 /// them to `MangaSyncActor`, and runs the collection's synchronization passes (the queued
@@ -152,6 +153,9 @@ struct MangaSyncService {
         guard let collectionRepository, let account else {
             return SyncResult(applied: 0, blocked: 0, rejected: [], upserted: 0, removed: 0)
         }
+        let signposter = OSSignposter.app
+        let interval = signposter.beginInterval(SignpostName.syncCollection, id: signposter.makeSignpostID())
+        defer { signposter.endInterval(SignpostName.syncCollection, interval) }
         var applied = 0
         var blocked = 0
         var rejected: [Int] = []

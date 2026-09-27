@@ -5,6 +5,7 @@
 //  Created by Manuel Alvarez on 11/09/2026.
 //
 
+import OSLog
 import SwiftData
 import SwiftUI
 
@@ -15,6 +16,10 @@ struct MisMangasApp: App {
     @State private var startup: Result<AppDependencies, PersistenceError>
 
     init() {
+        // The launch interval opens here, as early as the app runs its own code; the root view
+        // ends it once it knows which screen to show. One launch per process: an exclusive id,
+        // from which the root view recreates the interval state, so nothing is kept here.
+        _ = OSSignposter.app.beginInterval(SignpostName.launch, id: .exclusive)
         _startup = State(initialValue: Self.start())
     }
 

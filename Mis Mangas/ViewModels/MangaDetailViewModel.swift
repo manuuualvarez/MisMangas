@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import OSLog
 
 /// Control state of the detail refresh: whether a refresh is in flight and the last error.
 /// It never holds the manga: the detail reads it from the store, which `MangaSyncService` writes.
@@ -27,6 +28,11 @@ final class MangaDetailViewModel {
     /// Asks the server again only when the cached record is stale: never cached, or cached
     /// longer than `cacheTTL` ago. A manga in the collection never goes stale.
     func refreshIfNeeded(manga: Manga) async {
+        // The interval covers the opening of the detail: nothing beyond the cached record when
+        // it is fresh, the whole request when it is not.
+        let signposter = OSSignposter.app
+        let interval = signposter.beginInterval(SignpostName.detailOpen, id: signposter.makeSignpostID())
+        defer { signposter.endInterval(SignpostName.detailOpen, interval) }
         guard !manga.inCollection else {
             return
         }

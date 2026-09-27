@@ -18,7 +18,6 @@ actor CoverCacheService {
 
     private let files: CoverCacheFiles
     private let downloader: ImageDownloader
-    private let logger = Logger(subsystem: "cloud.manuelalvarez.Mis-Mangas", category: "covers")
 
     init(files: CoverCacheFiles, downloader: ImageDownloader = ImageDownloader()) {
         self.files = files
@@ -35,7 +34,7 @@ actor CoverCacheService {
         do {
             try fileManager.createDirectory(at: files.baseURL, withIntermediateDirectories: true)
         } catch {
-            logger.error("Covers folder not available: \(error.localizedDescription)")
+            Logger.widget.error("Covers folder not available: \(error.localizedDescription)")
             return
         }
         removeCovers(except: Set(items.map(\.mangaID)))
@@ -52,7 +51,7 @@ actor CoverCacheService {
             do {
                 try fileManager.removeItem(at: file)
             } catch {
-                logger.error("Cover \(file.lastPathComponent) not removed: \(error.localizedDescription)")
+                Logger.widget.error("Cover \(file.lastPathComponent, privacy: .private) not removed: \(error.localizedDescription)")
             }
         }
     }
@@ -65,18 +64,18 @@ actor CoverCacheService {
         do {
             data = try await downloader.data(from: url)
         } catch {
-            logger.error("Cover of manga \(item.mangaID, privacy: .private) not downloaded: \(String(describing: error))")
+            Logger.widget.error("Cover of manga \(item.mangaID, privacy: .private) not downloaded: \(String(describing: error))")
             return
         }
         guard let jpeg = Self.thumbnail(of: data) else {
-            logger.error("Cover of manga \(item.mangaID, privacy: .private) is not a readable image")
+            Logger.widget.error("Cover of manga \(item.mangaID, privacy: .private) is not a readable image")
             return
         }
         do {
             // Atomic: the widget never finds half a file.
             try jpeg.write(to: files.fileURL(for: item.mangaID), options: .atomic)
         } catch {
-            logger.error("Cover of manga \(item.mangaID, privacy: .private) not written: \(error.localizedDescription)")
+            Logger.widget.error("Cover of manga \(item.mangaID, privacy: .private) not written: \(error.localizedDescription)")
         }
     }
 

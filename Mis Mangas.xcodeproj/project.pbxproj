@@ -91,6 +91,8 @@
 				Components/ImageLoader/ImageDownloader.swift,
 				Components/ImageLoader/RemoteImageView.swift,
 				Components/MangaCardView/MangaCoverView.swift,
+				"Diagnostics/Logger+App.swift",
+				"Diagnostics/OSSignposter+App.swift",
 				Domain/DTOs/AuthorDTO.swift,
 				Domain/DTOs/AuthorIdsRequest.swift,
 				Domain/DTOs/CustomSearch.swift,
@@ -138,6 +140,7 @@
 				Preview/SampleData.swift,
 				Resources/Colors.xcassets,
 				Resources/Localizable.xcstrings,
+				Resources/MisMangas.icon,
 				Services/CatalogMode.swift,
 				WatchConnectivity/Payloads/ReadingItem.swift,
 				WatchConnectivity/Payloads/ReadingSnapshot.swift,
@@ -160,6 +163,8 @@
 		FEDB671F3068416600107FF2 /* Exceptions for "Mis Mangas" folder in "Mis Mangas WidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"Diagnostics/Logger+App.swift",
+				"Diagnostics/OSSignposter+App.swift",
 				Domain/Enums/AuthorRole.swift,
 				Domain/Enums/Demographic.swift,
 				Domain/Enums/Genre.swift,
@@ -542,7 +547,7 @@
 		FE13F53A306771A700FFA67D /* Debug configuration for PBXNativeTarget "Mis Mangas Watch App" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = MisMangas;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -576,7 +581,7 @@
 		FE13F53B306771A700FFA67D /* Release configuration for PBXNativeTarget "Mis Mangas Watch App" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = MisMangas;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -869,8 +874,9 @@
 			baseConfigurationReferenceAnchor = FEE678E130547D5D0012524F /* Mis Mangas */;
 			baseConfigurationReferenceRelativePath = Config/Secrets.xcconfig;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = MisMangas;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = "Mis Mangas/Mis Mangas.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -882,7 +888,6 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -914,8 +919,9 @@
 			baseConfigurationReferenceAnchor = FEE678E130547D5D0012524F /* Mis Mangas */;
 			baseConfigurationReferenceRelativePath = Config/Secrets.xcconfig;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = MisMangas;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = "Mis Mangas/Mis Mangas.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -927,7 +933,6 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

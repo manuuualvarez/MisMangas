@@ -23,7 +23,6 @@ actor ReadingWidgetService {
     /// Follows the passes for the life of the process: whoever called `start()` may go away without
     /// stopping it.
     private var listening: Task<Void, Never>?
-    private let logger = Logger(subsystem: "cloud.manuelalvarez.Mis-Mangas", category: "widget")
 
     init(
         syncActor: MangaSyncActor,
@@ -64,7 +63,7 @@ actor ReadingWidgetService {
             await coverCache?.update(to: snapshot.items)
         } catch {
             // The covers stay as they were; the widget reads the store on its own.
-            logger.error("Reading list not read for the widget: \(String(describing: error))")
+            Logger.widget.error("Reading list not read for the widget: \(String(describing: error))")
         }
         reload()
     }
