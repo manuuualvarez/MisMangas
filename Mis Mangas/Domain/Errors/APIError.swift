@@ -35,7 +35,7 @@ enum APIError: LocalizedError {
         case .http(let status, _):
             String(localized: "The server responded with an unexpected status (\(status)).")
         case .unauthorized:
-            String(localized: "Your session has expired. Please sign in again.")
+            String(localized: "Your session expired. Please sign in again.")
         case .forbidden:
             String(localized: "You do not have permission to do that.")
         case .notFound:

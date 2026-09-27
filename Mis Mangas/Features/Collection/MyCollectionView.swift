@@ -21,6 +21,7 @@ struct MyCollectionView: View {
     @Query(filter: #Predicate<Manga> { $0.inCollection == true }, sort: \Manga.title)
     private var mangas: [Manga]
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Binding var selectedTab: AppTab
     @Binding var pendingCatalogMode: CatalogMode?
     @Binding var pendingMangaID: Int?
@@ -34,6 +35,7 @@ struct MyCollectionView: View {
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @AppStorage("collection.displayMode") private var displayMode: DisplayMode = .list
     @Namespace private var heroNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         dependencies: AppDependencies,
@@ -176,7 +178,12 @@ struct MyCollectionView: View {
         } detail: {
             if let selectedManga {
                 MangaDetailView(manga: selectedManga)
-                    .navigationTransition(.zoom(sourceID: selectedManga.id, in: heroNamespace))
+                    // With Reduce Motion the detail fades in instead of growing out of its cover.
+                    .navigationTransition(
+                        reduceMotion
+                            ? AnyNavigationTransition(.crossFade)
+                            : AnyNavigationTransition(.zoom(sourceID: selectedManga.id, in: heroNamespace))
+                    )
             } else {
                 ContentUnavailableView("Select a manga", systemImage: "book.closed")
             }
@@ -198,7 +205,12 @@ struct MyCollectionView: View {
                     // The default secondary label measured 4.2:1 over the material.
                     .foregroundStyle(.primary)
                     .padding()
-                    .background(.regularMaterial, in: .rect(cornerRadius: 12))
+                    // Spelled with the type on purpose: as an implicit member inside a background
+                    // with a shape, the color crashed the app at launch.
+                    .background(
+                        reduceTransparency ? AnyShapeStyle(Color.mmSurface) : AnyShapeStyle(.regularMaterial),
+                        in: .rect(cornerRadius: 12)
+                    )
             }
         }
         // The overlay takes no focus: say that the wait began.

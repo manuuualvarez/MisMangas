@@ -14,15 +14,13 @@ import WidgetKit
 /// few rows), so each completion is called right after it, without a task. The timeline never asks
 /// for a reload by itself: the app reloads the widget whenever the collection changes.
 struct ReadingTimelineProvider: TimelineProvider {
-    private static let logger = Logger(subsystem: "cloud.manuelalvarez.Mis-Mangas", category: "widget")
-
     /// The app's store in the App Group container, opened once per process; `nil` when it cannot
     /// be opened, and the widget then shows nothing in progress.
     private static let container: ModelContainer? = {
         do {
             return try PersistenceController.makeContainer()
         } catch {
-            logger.error("Store not opened: \(String(describing: error))")
+            Logger.widget.error("Store not opened: \(String(describing: error))")
             return nil
         }
     }()
@@ -40,6 +38,9 @@ struct ReadingTimelineProvider: TimelineProvider {
     }
 
     private func makeEntry() -> ReadingEntry {
+        let signposter = OSSignposter.app
+        let interval = signposter.beginInterval(SignpostName.widgetTimeline, id: signposter.makeSignpostID())
+        defer { signposter.endInterval(SignpostName.widgetTimeline, interval) }
         guard let container = Self.container else {
             return .empty
         }
@@ -48,7 +49,7 @@ struct ReadingTimelineProvider: TimelineProvider {
                 .fetch(limit: ReadingItemsFetcher.itemLimit)
             return ReadingEntry(date: .now, items: reading.items, totalReading: reading.total)
         } catch {
-            Self.logger.error("Reading list not read: \(String(describing: error))")
+            Logger.widget.error("Reading list not read: \(String(describing: error))")
             return .empty
         }
     }

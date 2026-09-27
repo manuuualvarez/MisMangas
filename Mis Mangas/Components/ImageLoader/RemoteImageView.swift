@@ -14,8 +14,18 @@ import SwiftUI
 struct RemoteImageView: View {
     let url: URL?
     let label: String
+    /// Whether a load cut short by a cancellation runs once more while its URL is still wanted.
+    /// A screen pushed as the detail of a split view can get its disappearance right after its
+    /// appearance while it stays on screen: its task is cancelled, and nothing starts it again. The
+    /// detail's cover asks for this; a cell keeps the default, so a cell scrolled out of view still
+    /// stops costing network.
+    var retriesWhenCutShort = false
 
     @State private var phase: Phase = .loading
+    /// The URL of the latest load: an older load that ends after it leaves `phase` alone.
+    @State private var requestedURL: URL?
+    /// How many times the load ran again after being cut short: once at most.
+    @State private var retries = 0
 
     private enum Phase {
         case loading
@@ -60,13 +70,32 @@ struct RemoteImageView: View {
             phase = .failure
             return
         }
+        if requestedURL != url {
+            retries = 0
+        }
+        requestedURL = url
         phase = .loading
         let image = await ImageCacheActor.shared.image(for: url)
-        // `.task(id:)` cancelled us because `url` changed: the new load owns `phase` now.
-        guard !Task.isCancelled else {
+        // A newer load, for another URL, owns `phase` now.
+        guard requestedURL == url else {
             return
         }
-        phase = image.map(Phase.success) ?? .failure
+        if !Task.isCancelled {
+            phase = image.map(Phase.success) ?? .failure
+            return
+        }
+        // Cancelled while this URL is still the one wanted: the view left the screen, or only
+        // seemed to. An image that arrived anyway is shown; on a view that really left, this
+        // changes nothing.
+        if let image {
+            phase = .success(image)
+        } else if retriesWhenCutShort, retries == 0 {
+            // A task of its own: the cancelled one would not be served again.
+            retries += 1
+            Task {
+                await load()
+            }
+        }
     }
 }
 

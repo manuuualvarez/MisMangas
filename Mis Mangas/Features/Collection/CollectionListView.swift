@@ -38,9 +38,10 @@ struct CollectionListView: View {
             }
             if let error = viewModel.error, viewModel.failedRemovalID != nil {
                 InlineErrorView(error: error) {
+                    let title = mangas.first { $0.id == viewModel.failedRemovalID }?.title
                     Task {
                         await viewModel.retryRemoval()
-                        announceRemoval(of: nil)
+                        announceRemoval(of: title)
                     }
                 }
                 .listRowSeparator(.hidden)

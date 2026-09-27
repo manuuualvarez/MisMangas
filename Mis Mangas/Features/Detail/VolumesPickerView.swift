@@ -41,7 +41,7 @@ struct VolumesPickerView: View {
             .accessibilityValue("^[\(draft.volumesOwned.count) volume](inflect: true) of \(count) owned")
         } else {
             LabeledContent("Volumes owned") {
-                TextField("Volumes owned", value: $draft.ownedVolumeCount, format: .number, prompt: Text("None"))
+                TextField("Volumes owned", value: $draft.ownedVolumeCount, format: .number, prompt: Text("None").foregroundStyle(.mmSecondaryLabel))
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .focused(isEditingNumber)

@@ -6,6 +6,7 @@
 //
 
 import Observation
+import OSLog
 
 /// Control state of the catalog screen: which mode is shown, which page is loaded, whether a
 /// load is in flight and the last error. It never holds rows: the screen reads them from the
@@ -386,6 +387,9 @@ final class CatalogViewModel {
     }
 
     private func load(mode: CatalogMode, page: Int) async {
+        let signposter = OSSignposter.app
+        let interval = signposter.beginInterval(SignpostName.catalogPage, id: signposter.makeSignpostID())
+        defer { signposter.endInterval(SignpostName.catalogPage, interval) }
         do {
             let result = try await syncService.loadCatalogPage(mode: mode, page: page, per: perPage)
             // Cancelled after the download finished: a newer load owns the state now.

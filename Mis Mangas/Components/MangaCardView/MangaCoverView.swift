@@ -38,6 +38,8 @@ struct MangaCoverView: View {
     let manga: Manga
     var size: Size = .small
     var showsScore = false
+    /// Passed on to the image: the detail's cover loads again after a cut-short load.
+    var retriesWhenCutShort = false
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -48,7 +50,11 @@ struct MangaCoverView: View {
             .aspectRatio(2 / 3, contentMode: .fit)
             .frame(width: size.width, height: size.height)
             .overlay {
-                RemoteImageView(url: manga.coverURL, label: String(localized: "Cover of \(manga.title)"))
+                RemoteImageView(
+                    url: manga.coverURL,
+                    label: String(localized: "Cover of \(manga.title)"),
+                    retriesWhenCutShort: retriesWhenCutShort
+                )
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(alignment: .topTrailing) {

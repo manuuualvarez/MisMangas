@@ -30,13 +30,17 @@ struct CatalogGridCellView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(.tint, lineWidth: isSelected ? selectionLineWidth : 0)
                 }
-            Text(manga.title)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(
-                    dynamicTypeSize.isAccessibilitySize ? 4 : 2,
-                    reservesSpace: !dynamicTypeSize.isAccessibilitySize
-                )
-                .multilineTextAlignment(.leading)
+            // At accessibility sizes the grid is a single column: the whole title fits.
+            if dynamicTypeSize.isAccessibilitySize {
+                Text(manga.title)
+                    .font(.subheadline.weight(.semibold))
+                    .multilineTextAlignment(.leading)
+            } else {
+                Text(manga.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+            }
             if let author = manga.primaryAuthorName {
                 Text(author)
                     .font(.caption)

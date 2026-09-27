@@ -23,6 +23,7 @@ struct SearchView: View {
     @State private var isPresentingAdvancedSearch = false
     @AppStorage("catalog.displayMode") private var displayMode: DisplayMode = .grid
     @Namespace private var heroNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(syncService: MangaSyncService) {
         _viewModel = State(initialValue: CatalogViewModel(syncService: syncService))
@@ -136,7 +137,12 @@ struct SearchView: View {
             // the second column, and collapsed the split view pushes it on its own.
             if let selectedManga {
                 MangaDetailView(manga: selectedManga)
-                    .navigationTransition(.zoom(sourceID: selectedManga.id, in: heroNamespace))
+                    // With Reduce Motion the detail fades in instead of growing out of its cover.
+                    .navigationTransition(
+                        reduceMotion
+                            ? AnyNavigationTransition(.crossFade)
+                            : AnyNavigationTransition(.zoom(sourceID: selectedManga.id, in: heroNamespace))
+                    )
             } else {
                 ContentUnavailableView("Select a manga", systemImage: "book.closed")
             }
@@ -172,12 +178,10 @@ struct SearchView: View {
             guard viewModel.searchScope == .authors, viewModel.hasAuthorQuery else {
                 return
             }
-            // One form per count: a single match must not be announced as "1 authors found".
-            var message = switch count {
-            case 0: AttributedString(localized: "No authors found")
-            case 1: AttributedString(localized: "1 author found")
-            default: AttributedString(localized: "\(count) authors found")
-            }
+            // Grammar agreement keeps a single match from being announced as "1 authors found".
+            var message = count == 0
+                ? AttributedString(localized: "No authors found")
+                : AttributedString(localized: "^[\(count) author](inflect: true) found")
             // Same reason as the suggestions: these land while the field is being typed into.
             message.accessibilitySpeechAnnouncementPriority = .low
             AccessibilityNotification.Announcement(message).post()
