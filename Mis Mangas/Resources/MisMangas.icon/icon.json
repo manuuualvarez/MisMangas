@@ -32,8 +32,8 @@
     {
       "layers" : [
         {
-          "image-name" : "backgound_icon.png",
-          "name" : "backgound_icon"
+          "image-name" : "background_icon.png",
+          "name" : "background_icon"
         }
       ],
       "name" : "Back",
