@@ -21,6 +21,14 @@ Swift 6 (modo estricto de concurrencia), SwiftUI, SwiftData, `URLSession`, Widge
 
 La arquitectura, las decisiones y cómo compilar y probar están en este mismo README, más abajo.
 
+## Vídeo: la app en un iPhone Duo
+
+Recorrido de minuto y medio grabado en un **iPhone Duo** real (iOS 27), el modelo recién presentado: catálogo en rejilla y lista, selector Todos / Mejores, columna de detalle en horizontal y Mi colección. Es el mismo binario que corre en el resto de dispositivos, sin ajustes específicos de pantalla: la interfaz se adapta con `NavigationSplitView` y `TabView` con `.sidebarAdaptable`.
+
+[![Mis Mangas en un iPhone Duo](Screenshots/iphone-duo-poster.png)](Screenshots/iphone-duo.mp4)
+
+▶ [Ver el vídeo (MP4, 1280×720, 54 MB)](Screenshots/iphone-duo.mp4)
+
 ## Capturas
 
 | iPhone · Catálogo | iPhone · Detalle | iPhone · Mi colección | iPhone · Español |
@@ -179,7 +187,7 @@ Mis MangasTests/            suite de la app (Swift Testing), fixtures en Resourc
 Mis Mangas Watch App/       app watchOS (comparte por membresía dominio, esquema, actor y puente)
 Mis Mangas Watch AppTests/  suite del reloj
 Mis Mangas Widget/          Widget Extension (`Mis Mangas WidgetExtension`)
-Screenshots/                capturas de iPhone, iPad, Apple Watch y widget que usa este README
+Screenshots/                capturas de iPhone, iPad, Apple Watch y widget que usa este README, y el vídeo del iPhone Duo
 Entrega/                    manual de usuario y mapa del proyecto (PDF)
 ```
 
