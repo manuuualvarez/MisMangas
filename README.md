@@ -12,6 +12,15 @@ App universal para explorar un catálogo de más de 64 000 mangas, buscarlos y f
 
 Swift 6 (modo estricto de concurrencia), SwiftUI, SwiftData, `URLSession`, WidgetKit, WatchConnectivity y Swift Testing. **Sin librerías de terceros.**
 
+## Documentos de entrega
+
+| Documento | Qué contiene |
+|---|---|
+| [Manual de usuario](Entrega/Manual%20de%20usuario%20-%20Mis%20Mangas.pdf) | Guía paso a paso para usar y evaluar la app (13 páginas): catálogo y filtros, búsqueda por título, autor y criterios, ficha y primera entrada en la colección, colección, tomos y progreso, sin conexión, cuenta y sincronización, Apple Watch, widgets, y ayuda y evaluación |
+| [Mapa del proyecto](Entrega/Mapa%20del%20proyecto%20-%20Mis%20Mangas.pdf) | Diagrama de decisiones de alto nivel con los tres recorridos: acceso y navegación, guardado local y sincronización, reloj y widget |
+
+La arquitectura, las decisiones y cómo compilar y probar están en este mismo README, más abajo.
+
 ## Capturas
 
 | iPhone · Catálogo | iPhone · Detalle | iPhone · Mi colección | iPhone · Español |
