@@ -179,6 +179,8 @@ Mis MangasTests/            suite de la app (Swift Testing), fixtures en Resourc
 Mis Mangas Watch App/       app watchOS (comparte por membresía dominio, esquema, actor y puente)
 Mis Mangas Watch AppTests/  suite del reloj
 Mis Mangas Widget/          Widget Extension (`Mis Mangas WidgetExtension`)
+Screenshots/                capturas de iPhone, iPad, Apple Watch y widget que usa este README
+Entrega/                    manual de usuario y mapa del proyecto (PDF)
 ```
 
 ## Créditos
