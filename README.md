@@ -100,26 +100,41 @@ Las ideas que lo sostienen:
 - **Widget sin red.** Lee el mismo store por App Group con `FetchDescriptor` y `fetchLimit`; las portadas se dejan en una caché de ficheros compartida tras cada pase de sincronización y el widget se recarga entonces.
 - **Swift 6 estricto.** `async/await` y actores; sin GCD, sin Combine, sin `@unchecked Sendable`. Dependencias explícitas a través de `AppDependencies`.
 
-La descripción completa (diagramas de secuencia de auth, reconciliación, WatchConnectivity y widget; tabla tipo → aislamiento; qué no hay y por qué) está en `Docs/Architecture.md`, y las decisiones numeradas en `Docs/ADR/` (ADR-000 a ADR-016). Esa documentación de trabajo no se versiona; se entrega junto al proyecto.
+### Los cuatro flujos, en corto
+
+- **Inicio de sesión y renovación.** `Security.login` hace `POST /users/jwt/login` con Basic, valida el `exp` del JWT recibido y guarda token y email en Keychain (`SecKeyStore`). Antes de cada llamada a `/collection`, `validToken()` lee el token: si le quedan menos de 23 h, llama a `POST /users/jwt/refresh` y guarda el nuevo; si está caducado o es ilegible, lo borra y la app vuelve a la pantalla de bienvenida. Al arrancar, `SessionViewModel.restoreSession()` intenta ese refresh; un fallo de red conserva la sesión, un rechazo del servidor la expira.
+- **Colección y reconciliación.** Guardar en el editor llama a `MangaSyncActor.saveCollectionEntry`, que escribe la entrada y una `PendingOperation` en la misma transacción. `SyncCoordinator` serializa los pases de `MangaSyncService.synchronizeCollection()`: drena las operaciones pendientes de la cuenta activa en orden (`POST` o `DELETE /collection/manga`), reintenta tres veces los fallos de red o 5xx y bloquea después, descarta y reporta los 4xx, y expira la sesión ante 401/403; luego `GET /collection/manga` y `applyRemoteSnapshot`, que respeta los mangas con operación pendiente. Las operaciones hechas como invitado se adoptan al iniciar sesión y se envían primero.
+- **Apple Watch.** `WatchSyncService` publica un `ReadingSnapshot` (hasta 50 mangas en lectura) por `updateApplicationContext` al activar la sesión, al recuperar alcance y tras cada pase de sincronización. El reloj lo aplica en su propio store entrada por entrada y devuelve cada cambio como `ReadingUpdate` por `sendMessage` y `transferUserInfo`; el iPhone lo aplica solo si es posterior a la última edición y encola una sincronización.
+- **Widget.** Tras cada pase, `ReadingWidgetService` lee los seis mangas en lectura más recientes, deja sus portadas como JPEG en la caché del App Group (`CoverCacheService`) y llama a `WidgetCenter.reloadTimelines`. `ReadingTimelineProvider` abre el mismo contenedor y consulta con `FetchDescriptor` y `fetchLimit`; no tiene red. Tocar el widget abre `mismangas://manga/{id}`, que `MangaDeepLink` valida y `MyCollectionView` resuelve.
+
+### Qué no hay, y por qué
+
+| Ausente | Motivo |
+|---|---|
+| Cliente HTTP abstracto, `Endpoint`, interceptores | `URLSession` más un protocolo de tres métodos cubre todo; un interceptor reactivo a 401 sobra cuando el cliente lee `exp` y renueva antes |
+| `UseCases`, `Stores`, entidades paralelas | Los `@Model` son el dominio; los servicios existen solo donde red y persistencia deben orquestarse juntas |
+| Combine, GCD, completion handlers | Swift 6 estricto con `async/await`; las dos excepciones (`WCSessionDelegate`, `TimelineProvider`) las impone Apple |
+| `ObservableObject`, `NavigationView`, routers propios, detección de dispositivo | `@Observable`, `NavigationStack`, `NavigationSplitView` adaptativo y `TabView` con `.sidebarAdaptable` |
+| App Group o Keychain compartidos con el reloj | watchOS no comparte contenedores con el iPhone |
+| CloudKit, librerías de terceros | La nube es la API de la práctica; solo frameworks de Apple |
+| XCTest, tests de UI | Swift Testing; la interfaz se verifica con `#Preview` y en simulador |
 
 ## Decisiones de arquitectura (resumen)
 
-| ADR | Decisión |
+| Tema | Decisión |
 |---|---|
-| 000 | Stack: Swift 6 estricto, SwiftUI, SwiftData, Swift Testing, sin terceros |
-| 001 | Identificadores: bundle `cloud.manuelalvarez.Mis-Mangas`, App Group solo app + widget, sin Keychain Sharing |
-| 002 | Capa de red: `@APIActor` + `NetworkInteractor` + `URLRequest.request(token:)`; sin cliente HTTP abstracto |
-| 003 | Arranque del `ModelContainer` con `Result`, sin `fatalError`; contenedor en memoria para previews y tests |
-| 006 · 014 · 016 | Reconciliación de la colección: outbox único canal, escrituras atómicas del actor, operaciones con dueño |
-| 007 | Apple Watch: WatchConnectivity + store propio |
-| 008 | Datos de preview en `PreviewContainer` |
-| 009 | Widget: caché de portadas en el App Group, recarga por pase, deep link `mismangas://manga/{id}` |
-| 010 | Catálogo persistido con índice por modo; las vistas reciben solo `Manga` |
-| 011 | Sistema visual: diez tokens de color en cuatro apariencias, rejilla con badge de puntuación |
-| 012 · 013 | `NavigationSplitView` adaptativo para lista/detalle; la lista es dueña de la selección; formularios como hojas con `NavigationStack` |
-| 015 | Autenticación con el JWT de 24 h de `/users/jwt/*` (la colección rechaza el token de sesión) |
-
-ADR-004 y ADR-005 fueron revocadas por ADR-015 y ADR-010.
+| Stack | Swift 6 estricto, SwiftUI, SwiftData, Swift Testing, sin terceros |
+| Identificadores | bundle `cloud.manuelalvarez.Mis-Mangas`, App Group solo app + widget, sin Keychain Sharing |
+| Capa de red | `@APIActor` + `NetworkInteractor` + `URLRequest.request(token:)`; sin cliente HTTP abstracto |
+| Persistencia | Arranque del `ModelContainer` con `Result`, sin `fatalError`; contenedor en memoria para previews y tests |
+| Colección | Reconciliación: outbox único canal, escrituras atómicas del actor, operaciones con dueño |
+| Apple Watch | WatchConnectivity + store propio |
+| Previews | Datos de muestra en `PreviewContainer`, con red real para las portadas |
+| Widget | caché de portadas en el App Group, recarga por pase, deep link `mismangas://manga/{id}` |
+| Catálogo | Persistido con índice por modo; las vistas reciben solo `Manga` |
+| Sistema visual | diez tokens de color en cuatro apariencias, rejilla con badge de puntuación |
+| Navegación | `NavigationSplitView` adaptativo para lista/detalle; la lista es dueña de la selección; formularios como hojas con `NavigationStack` |
+| Autenticación | JWT de 24 h de `/users/jwt/*` en Keychain con renovación proactiva (la colección rechaza el token de sesión) |
 
 ## Idioma
 
