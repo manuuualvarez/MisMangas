@@ -564,30 +564,6 @@ struct MangaSyncActorCollectionTests {
         #expect(stored.cachedAt == Self.t2)
     }
 
-    @Test func `collectionSnapshot returns every stored entry with its fields`() async throws {
-        let (actor, _) = try PersistenceTestSupport.makeActor()
-        _ = try await actor.cacheDetail(monster, now: Self.t1)
-        _ = try await actor.cacheDetail(berserk, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1, 2, 3], readingVolume: 2, completeCollection: false, account: nil, now: Self.t2)
-        try await actor.saveCollectionEntry(mangaID: Self.berserkID, volumesOwned: [5, 4], readingVolume: nil, completeCollection: true, account: nil, now: Self.t3)
-
-        let snapshot = try await actor.collectionSnapshot()
-
-        // The snapshot promises no order: sort it here.
-        let sorted = snapshot.sorted { $0.mangaID < $1.mangaID }
-        #expect(sorted.map(\.mangaID) == [Self.monsterID, Self.berserkID])
-        let first = try #require(sorted.first)
-        #expect(first.volumesOwned == [1, 2, 3])
-        #expect(first.readingVolume == 2)
-        #expect(!first.completeCollection)
-        #expect(first.updatedAt == Self.t2)
-        let second = try #require(sorted.last)
-        #expect(second.volumesOwned == [4, 5])
-        #expect(second.readingVolume == nil)
-        #expect(second.completeCollection)
-        #expect(second.updatedAt == Self.t3)
-    }
-
     // MARK: - Outbox
 
     /// Id of the stored operation of `mangaID`, read through a fresh context so the test never
@@ -711,37 +687,6 @@ struct MangaSyncActorCollectionTests {
         #expect(operations.map(\.mangaID) == [Self.berserkID])
         // Completing the send never touches the entry it carried.
         #expect(try PersistenceTestSupport.fetchAll(UserCollectionEntry.self, in: context).map(\.mangaID) == [Self.monsterID])
-    }
-
-    @Test func `pendingMangaIDs returns each manga with a queued operation once`() async throws {
-        let (actor, _) = try PersistenceTestSupport.makeActor()
-        _ = try await actor.cacheDetail(monster, now: Self.t1)
-        _ = try await actor.cacheDetail(monster.replacing(id: 5), now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: 5, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
-        try await actor.removeCollectionEntry(mangaID: Self.monsterID, account: nil, now: Self.t2)
-        try await actor.removeCollectionEntry(mangaID: Self.berserkID, account: nil, now: Self.t3)
-
-        let ids = try await actor.pendingMangaIDs()
-
-        #expect(ids == [Self.monsterID, Self.berserkID, 5])
-    }
-
-    @Test func `pendingMangaIDs includes the mangas whose operation is blocked`() async throws {
-        let (actor, container) = try PersistenceTestSupport.makeActor()
-        _ = try await actor.cacheDetail(monster, now: Self.t1)
-        try await actor.saveCollectionEntry(mangaID: Self.monsterID, volumesOwned: [1], readingVolume: nil, completeCollection: false, account: nil, now: Self.t1)
-        try await actor.removeCollectionEntry(mangaID: Self.berserkID, account: nil, now: Self.t2)
-        let blockedID = try Self.operationID(mangaID: Self.monsterID, in: container)
-        var isBlocked = false
-        for _ in 1 ... 3 {
-            isBlocked = try await actor.markOperationFailed(id: blockedID, error: "offline", now: Self.t3)
-        }
-
-        let ids = try await actor.pendingMangaIDs()
-
-        #expect(isBlocked)
-        #expect(ids == [Self.monsterID, Self.berserkID])
     }
 
     @Test func `Writing a manga again moves its operation behind the ones queued in between`() async throws {

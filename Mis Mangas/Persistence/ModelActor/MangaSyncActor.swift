@@ -183,21 +183,6 @@ actor MangaSyncActor {
         }
     }
 
-    /// Every entry of the collection, in no particular order.
-    func collectionSnapshot() throws(PersistenceError) -> [CollectionEntrySnapshot] {
-        try run {
-            try modelContext.fetch(FetchDescriptor<UserCollectionEntry>()).map { entry in
-                CollectionEntrySnapshot(
-                    mangaID: entry.mangaID,
-                    volumesOwned: entry.volumesOwned,
-                    readingVolume: entry.readingVolume,
-                    completeCollection: entry.completeCollection,
-                    updatedAt: entry.updatedAt
-                )
-            }
-        }
-    }
-
     // MARK: - Outbox
 
     /// The operations of `account` ready to send, oldest first; blocked ones wait for
@@ -286,14 +271,6 @@ actor MangaSyncActor {
                 operation.lastError = nil
             }
             try save()
-        }
-    }
-
-    /// Every manga with a queued operation, blocked ones included: a local intention that has not
-    /// reached the server must not be overwritten by it.
-    func pendingMangaIDs() throws(PersistenceError) -> Set<Int> {
-        try run {
-            Set(try modelContext.fetch(FetchDescriptor<PendingOperation>()).map(\.mangaID))
         }
     }
 

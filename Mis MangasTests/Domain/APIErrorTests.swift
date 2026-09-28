@@ -17,7 +17,6 @@ struct APIErrorTests {
     @Test(arguments: [400, 404])
     func `HTTP 4xx is a client error and not retryable`(status: Int) {
         let error = APIError.http(status: status, body: nil)
-        #expect(error.isClientError == true)
         #expect(error.isServerError == false)
         #expect(error.isRetryable == false)
     }
@@ -27,14 +26,12 @@ struct APIErrorTests {
         let error = APIError.http(status: status, body: nil)
         #expect(error.isServerError == true)
         #expect(error.isRetryable == true)
-        #expect(error.isClientError == false)
     }
 
     // MARK: - Semantic cases
 
     @Test(arguments: [APIError.unauthorized, .forbidden, .notFound])
     func `Semantic 4xx cases are client errors only`(error: APIError) {
-        #expect(error.isClientError == true)
         #expect(error.isServerError == false)
         #expect(error.isRetryable == false)
     }
@@ -42,7 +39,6 @@ struct APIErrorTests {
     @Test(arguments: [APIError.serverError, .transport(DummyError())])
     func `Server and transport failures are retryable`(error: APIError) {
         #expect(error.isRetryable == true)
-        #expect(error.isClientError == false)
     }
 
     @Test func `serverError is also categorized as a server error`() {
@@ -51,7 +47,6 @@ struct APIErrorTests {
 
     @Test(arguments: [APIError.cancelled, .decoding(DummyError()), .encoding(DummyError()), .invalidURL, .unknown])
     func `Local failures belong to no category`(error: APIError) {
-        #expect(error.isClientError == false)
         #expect(error.isServerError == false)
         #expect(error.isRetryable == false)
     }

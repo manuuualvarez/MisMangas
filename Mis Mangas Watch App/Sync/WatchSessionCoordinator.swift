@@ -72,6 +72,9 @@ actor WatchSessionCoordinator {
     /// been received and applied, or when the calling task is cancelled (the system ran out of
     /// background time). The session hands content over before it clears `hasContentPending`;
     /// looking again after a short pause lets the listening task take what it was handed.
+    /// This is the only polling loop of the project: `WCSession` offers no asynchronous signal
+    /// for `hasContentPending`, and the loop is bounded by the cancellation the system applies
+    /// to the background task.
     func receivePendingContent() async {
         start()
         var isSettled = false
