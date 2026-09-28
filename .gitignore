@@ -54,6 +54,5 @@ AGENTS.override.md
 /.specify/
 /Mis Mangas/Config/Secrets.xcconfig
 
-# Material de entrega y salidas de herramientas (fuera del repo, D9)
-Entrega/
+# Salidas de herramientas (fuera del repo, D9). Entrega/ (manual de usuario y mapa del proyecto en PDF) sí se versiona: el README los enlaza.
 output/
