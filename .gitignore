@@ -50,9 +50,9 @@ AGENTS.override.md
 # --- Colecciones, ambientes, snapshots y runs generados de Postman ---
 /postman/
 
-# --- Mis Mangas · plan v2 (D9): tooling de agente y secretos fuera de git (Docs/ ya está arriba) ---
+# --- Mis Mangas: tooling de agente y secretos, fuera de git (Docs/ ya está arriba) ---
 /.specify/
 /Mis Mangas/Config/Secrets.xcconfig
 
-# Salidas de herramientas (fuera del repo, D9). Entrega/ (manual de usuario y mapa del proyecto en PDF) sí se versiona: el README los enlaza.
+# Salidas de herramientas, no forman parte del proyecto. Entrega/ (manual de usuario y mapa del proyecto en PDF) sí se versiona: el README los enlaza.
 output/
